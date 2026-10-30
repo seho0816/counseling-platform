@@ -12,6 +12,8 @@
            (Mac/Linux) export ANTHROPIC_API_KEY=발급받은키
   모델 지정: (Windows) set MODEL=모델이름   (Mac/Linux) export MODEL=모델이름
   모델 이름은 각 회사 공식 문서에서 확인한다. 결과 파일: api_test_result_회사이름.csv
+  프롬프트 파일 지정(선택): export PROMPT_FILE=7_요약_프롬프트_v2.txt
+  결과 파일 이름 뒤에 붙일 표시(선택): export RESULT_TAG=_v2
 
 주의: API 키는 코드나 저장소에 적지 말고 환경 변수로만 쓴다.
       가상 데이터(session.csv)만 사용한다.
@@ -68,6 +70,12 @@ def make_caller(provider):
     sys.exit("회사이름은 claude, openai, gemini 중 하나여야 합니다.")
 
 
+if os.environ.get("PROMPT_FILE"):
+    SYSTEM = open(os.environ["PROMPT_FILE"], encoding="utf-8").read()
+    if "client_state" in SYSTEM and "client_state" not in REQUIRED:
+        REQUIRED.insert(2, "client_state")  # 4항목 프롬프트면 필드도 4개 확인
+
+
 def load_records(path, ids):
     with open(path, encoding="utf-8-sig", newline="") as f:
         rows = {r["session_id"]: r for r in csv.DictReader(f)}
@@ -112,7 +120,7 @@ def main():
         })
         print(rec["session_id"], f"{sec}초", "JSON 정상" if json_ok else "JSON 오류", "필드 정상" if fields_ok else "필드 누락")
 
-    out = f"api_test_result_{provider}.csv"
+    out = f"api_test_result_{provider}{os.environ.get('RESULT_TAG', '')}.csv"
     with open(out, "w", encoding="utf-8-sig", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(results[0].keys()))
         w.writeheader()
