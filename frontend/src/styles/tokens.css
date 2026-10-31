@@ -1,0 +1,37 @@
+:root {
+  color-scheme: light;
+
+  /* 색: 청록 한 가지를 주색으로 쓰고, 위기·안전 안내에만 점토색을 쓴다 */
+  --paper: #f3f6f6;
+  --surface: #ffffff;
+  --sidebar: #e6eeee;
+  --ink: #1d2a2f;
+  --muted: #566569;
+  --line: #d5dedf;
+  --line-strong: #b4c3c5;
+  --brand: #1b6b73;
+  --brand-ink: #124a50;
+  --brand-soft: #dfeeee;
+  --clay: #a8432e;
+  --clay-soft: #f7e7e2;
+
+  /* 사례 상태색: 색만으로 구분하지 않고 항상 글자와 함께 쓴다 */
+  --st-new: #5f7aa3;
+  --st-active: #1b6b73;
+  --st-closed: #8c9a9d;
+  --st-referred: #b07a1f;
+
+  /* 글자 */
+  --font: 'Pretendard Variable', Pretendard, 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, sans-serif;
+  --fs-sm: 0.875rem;
+  --fs-base: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.75rem;
+  --fs-2xl: 2.5rem;
+
+  /* 모서리: 입력·버튼은 8px, 묶음 영역은 12px */
+  --r-control: 8px;
+  --r-panel: 12px;
+
+  --focus: 0 0 0 3px rgba(27, 107, 115, 0.35);
+}
