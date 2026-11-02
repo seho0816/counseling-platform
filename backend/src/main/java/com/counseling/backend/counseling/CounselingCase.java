@@ -68,6 +68,11 @@ public class CounselingCase {
         this.title = title;
     }
 
+    /** Admin-only assignment is controlled by AdminCaseWriteService. */
+    public void assignCounselor(User counselor) {
+        this.counselor = counselor;
+    }
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
