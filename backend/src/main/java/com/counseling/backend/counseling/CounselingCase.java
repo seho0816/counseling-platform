@@ -42,6 +42,10 @@ public class CounselingCase {
     @Column(nullable = false, length = 200)
     private String title;
 
+    // Free text describing the client's concern; distinct from the short case title.
+    @Column(name = "concern", columnDefinition = "text")
+    private String concern;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private CaseStatus status = CaseStatus.RECEIVED;
@@ -57,6 +61,10 @@ public class CounselingCase {
     }
 
     public CounselingCase(Client client, User counselor, String title) {
+        this(client, counselor, title, null);
+    }
+
+    public CounselingCase(Client client, User counselor, String title, String concern) {
         if (client == null) {
             throw new IllegalArgumentException("Client must not be null");
         }
@@ -66,6 +74,7 @@ public class CounselingCase {
         this.client = client;
         this.counselor = counselor; // Can be null while assignment is pending.
         this.title = title;
+        this.concern = concern;
     }
 
     /** Admin-only assignment is controlled by AdminCaseWriteService. */
@@ -90,6 +99,7 @@ public class CounselingCase {
     public User getCounselor() { return counselor; }
     public Long getIntakeFormId() { return intakeFormId; }
     public String getTitle() { return title; }
+    public String getConcern() { return concern; }
     public CaseStatus getStatus() { return status; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
     public OffsetDateTime getUpdatedAt() { return updatedAt; }

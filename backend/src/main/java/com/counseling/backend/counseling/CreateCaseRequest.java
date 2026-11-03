@@ -1,3 +1,8 @@
 package com.counseling.backend.counseling;
 
-public record CreateCaseRequest(Long clientId, Long counselorId, String title) {}
+// concern is optional while existing cases are migrated.
+public record CreateCaseRequest(Long clientId, Long counselorId, String title, String concern) {
+    public CreateCaseRequest(Long clientId, Long counselorId, String title) {
+        this(clientId, counselorId, title, null);
+    }
+}
