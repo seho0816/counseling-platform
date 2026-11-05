@@ -31,7 +31,7 @@
   "aiGenerated": true,
   "reviewRequired": true,
   "model": "gemini-3.5-flash-lite",
-  "promptVersion": "v4"
+  "promptVersion": "v5"
 }
 ```
 
@@ -68,7 +68,7 @@
 | `intervention` | `intervention` (같음) |
 | `next_plan` | **`nextPlan`** |
 
-- 이 폴더의 코드와 프롬프트(`prompts/summary_prompt_v4.txt`)는 모두 새 이름이다.
+- 이 폴더의 코드와 프롬프트(`prompts/summary_prompt_v5.txt`)는 모두 새 이름이다.
 - 아직 예전 이름을 쓰는 곳: `backend/ai/prompts/요약_프롬프트_v2·v3·v3_4항목.txt`, `backend/ai/api_test.py`(`REQUIRED`), `backend/ai/chatbot_test/11_json_validate.py`(`FIELDS`), `docs/ai/JSON_응답_구조.md`, "AI 연동 요청 명세" 문서(`chiefComplaint`). 새 코드는 이것들에 의존하지 않으므로 그대로 두거나 나중에 정리한다.
 - DB 컬럼 이름은 백엔드가 정한다. 제안: `complaint`, `intervention`, `next_plan`.
 - 3항목 기준이다. 팀이 4항목(내담자 상태 추가)으로 정하면 `clientState`를 추가한다.
@@ -82,7 +82,7 @@
 | `AI_HOST` | 선택 | `127.0.0.1` | 서버 주소. 기본은 내 컴퓨터에서만 접속됨 |
 | `AI_PORT` | 선택 | `8001` | 서버 포트 (Spring은 8080) |
 | `AI_MAX_RECORD_CHARS` | 선택 | `20000` | 기록 최대 글자 수 |
-| `AI_PROMPT_FILE` | 선택 | `prompts/summary_prompt_v4.txt` | 다른 프롬프트로 시험할 때 |
+| `AI_PROMPT_FILE` | 선택 | `prompts/summary_prompt_v5.txt` | 다른 프롬프트로 시험할 때 |
 
 **키는 환경 변수로만 넣는다.** `.env`에 적어도 되지만 GitHub에는 올리지 않는다(저장소 `.gitignore`가 `.env`를 막고, 이 폴더의 `.gitignore`도 막는다). 올려도 되는 건 값이 빈 `.env.example`뿐이다. 코드, 로그, 문서, 캡처에 키를 남기지 않는다.
 
@@ -131,8 +131,8 @@ try {
 ## 시험
 
 ```
-py -m unittest discover -s tests -v     # 키 없이 28개 (오류 처리, 서버, 검사 도구)
-py tests/run_eval.py                    # 실제 LLM으로 가상 기록 15개 평가 (키 필요, 약 1분)
+py -m unittest discover -s tests -v     # 키 없이 30개 (오류 처리, 서버, 검사 도구)
+py tests/run_eval.py                    # 실제 LLM으로 가상 기록 18개 평가 (키 필요, 약 1분)
 py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LLM 결과가 아님)
 ```
 
@@ -145,4 +145,5 @@ py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LL
 - 이름은 자동으로 지울 수 없다. 이름 필드를 아는 백엔드가 요청 전에 `[내담자]` 같은 말로 바꾸는 것을 권한다.
 - AI는 기록에 없는 상담자 행동("확인함", "안내함")을 가끔 만든다. 프롬프트로 줄였지만 없어지지 않는다. 그래서 상담사 검토와 승인이 필수다.
 - 이전 실측(프롬프트 v3, 기록 10건, 30칸)에서 정답과 일치 23칸이었다. 자세한 문제는 `tests/KNOWN_ISSUES.md`.
-- 프롬프트 v4(필드 이름 변경과 규칙 보강)와 이 코드를 **실제 LLM으로 돌린 결과는 `run_eval.py`를 실행해야 나온다.**
+- 프롬프트 v4로 실제 LLM 평가를 두 번 돌렸을 때 15개 중 1차는 통과 12(실패 C03, C09, C12), 2차는 통과 14(실패 C12)였다. **같은 입력이라도 결과가 달라질 수 있다.** C12(짧은 기록)는 두 번 다 호소 칸에 "사정 확인 중"을 넣어서 v5에서 "접수·사정 확인은 호소가 아니라 개입" 규칙과 예시를 추가했다. v5의 평가 결과는 `run_eval.py`로 확인한다 (v5 보완에 쓰지 않은 새 입력 C16~C18 포함).
+- 응답 시간은 보통 1~3초이지만 첫 호출이나 긴 기록에서 5초 이상(최대 23초)이 나온 적이 있다. 백엔드 응답 대기는 30초 이상을 권한다.

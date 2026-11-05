@@ -1,4 +1,4 @@
-"""요약 기능 평가: 가상 상담 기록 15개 + API 오류 처리 6개를 돌려 결과표를 만든다.
+"""요약 기능 평가: 가상 상담 기록 18개 + API 오류 처리 6개를 돌려 결과표를 만든다.
 
 사용법 (backend/ai/summary 폴더에서)
   export GEMINI_API_KEY=키        # 키는 환경 변수로만 넣는다
@@ -18,7 +18,7 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from summary_core import (NO_RECORD, AiAuthError, AiRateLimitError, AiUnavailableError,
+from summary_core import (PROMPT_VERSION, NO_RECORD, AiAuthError, AiRateLimitError, AiUnavailableError,
                           SummaryError, SummaryService, FIELDS)  # noqa: E402
 from llm_clients import FakeClient  # noqa: E402
 
@@ -54,6 +54,10 @@ def evaluate_case(case, result, llm_called):
         for g in groups:
             if not any(a in result.get(f, "") for a in g):
                 problems.append("%s에 %s가 없음" % (f, "/".join(g)))
+    for f, words in exp.get("forbid_fields", {}).items():
+        for w in words:
+            if w in result.get(f, ""):
+                problems.append("%s에 들어가면 안 되는 말: %s" % (f, w))
     joined = " ".join(result.get(f, "") for f in FIELDS)
     for w in exp.get("forbid", []):
         if w in joined:
@@ -141,10 +145,10 @@ def main():
     n = {k: sum(1 for r in rows if r["verdict"] == k) for k in ("PASS", "WARN", "FAIL")}
     lines = ["# 상담 기록 AI 요약 평가 결과 (%s)" % tag, "",
              "- 실행: %s" % datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-             "- 모델: %s, 프롬프트: v4" % model]
+             "- 모델: %s, 프롬프트: %s" % (model, PROMPT_VERSION)]
     if args.fake:
         lines.append("- **이 결과는 LLM이 아니라 가짜 응답으로 시험 도구만 점검한 것이다. 실제 요약 품질의 근거가 아니다.**")
-    lines += ["- 15개 중 통과 %d, 경고 %d, 실패 %d" % (n["PASS"], n["WARN"], n["FAIL"]), "",
+    lines += ["- %d개 중 통과 %d, 경고 %d, 실패 %d" % (len(rows), n["PASS"], n["WARN"], n["FAIL"]), "",
               "## 입력별 결과", "", "| id | 유형 | 판정 | 기대 결과 | 발견한 문제 |", "| --- | --- | --- | --- | --- |"]
     for r in rows:
         lines.append("| %s | %s | %s | %s | %s |" % (r["c"]["id"], r["c"]["type"], r["verdict"], r["c"]["expected_text"], "; ".join(r["notes"]) or "없음"))

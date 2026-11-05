@@ -123,6 +123,15 @@ class SummaryServiceTest(unittest.TestCase):
         self.assertNotIn("next_plan", p)
 
 
+    def test_기본_프롬프트는_v5이고_접수는_호소가_아니라는_규칙이_있다(self):
+        p = core.load_prompt()
+        self.assertEqual(core.PROMPT_VERSION, "v5")
+        self.assertIn("complaint에 쓰지 않는다", p)
+        self.assertIn("접수", p)
+        s, _ = service(GOOD)
+        self.assertEqual(s.summarize("기록")["promptVersion"], "v5")
+
+
 class EvalToolTest(unittest.TestCase):
     CASE = {"record": "친구가 없다고 함 3주", "expect": {"include": {"complaint": [["친구"]]}, "forbid": ["우울증"], "none_fields": ["nextPlan"]}}
 
@@ -146,6 +155,13 @@ class EvalToolTest(unittest.TestCase):
 
     def test_기록에_없는_숫자는_경고(self):
         self.assertEqual(run_eval.evaluate_case(self.CASE, self.ok(intervention="7회"), True)[0], "WARN")
+
+    def test_호소_칸에_들어가면_안_되는_말을_잡는다(self):
+        case = {"record": "첫 내방", "expect": {"forbid_fields": {"complaint": ["질문지"]}}}
+        ok = {"complaint": "직장 일", "intervention": "x", "nextPlan": "y"}
+        bad = {"complaint": "질문지 작성", "intervention": "x", "nextPlan": "y"}
+        self.assertEqual(run_eval.evaluate_case(case, ok, True)[0], "PASS")
+        self.assertEqual(run_eval.evaluate_case(case, bad, True)[0], "FAIL")
 
     def test_빈_기록에서_AI를_부르면_실패(self):
         case = {"record": "", "expect": {"error": "EMPTY_RECORD", "llm_called": False}}

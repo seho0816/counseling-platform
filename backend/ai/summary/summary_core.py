@@ -8,7 +8,7 @@ import os
 import re
 import time
 
-PROMPT_VERSION = "v4"
+PROMPT_VERSION = "v5"
 FIELDS = ("complaint", "intervention", "nextPlan")
 NO_RECORD = "기록에 없음"
 DEFAULT_MAX_CHARS = 20000
@@ -109,7 +109,7 @@ def parse_summary(raw):
 
 
 def load_prompt():
-    path = os.environ.get("AI_PROMPT_FILE") or os.path.join(HERE, "prompts", "summary_prompt_v4.txt")
+    path = os.environ.get("AI_PROMPT_FILE") or os.path.join(HERE, "prompts", "summary_prompt_v5.txt")
     try:
         with open(path, encoding="utf-8") as f:
             return f.read()
