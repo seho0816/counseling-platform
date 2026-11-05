@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { HOME_PATH } from '../auth/paths';
+import { checkServer } from '../api/healthApi';
+import { ApiError, describeApiError } from '../api/http';
 import Brand from '../components/Brand';
-import { getDb } from '../mocks/db';
 
 type Tab = 'counselor' | 'admin' | 'client';
 
@@ -13,8 +14,14 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'admin', label: '기관 관리자' },
 ];
 
+/** 로그인 실패 문구: 비밀번호 오류는 그대로, 서버·보안 토큰 문제는 다음 행동을 알려준다. */
+function describeLoginError(err: unknown): string {
+  if (err instanceof ApiError) return describeApiError(err, '로그인하지 못했어요.');
+  return err instanceof Error ? err.message : '로그인하지 못했어요. 잠시 후 다시 시도해 주세요.';
+}
+
 export default function LoginPage() {
-  const { user, loginStaff, enterClient } = useAuth();
+  const { user, status, loginStaff, enterClient } = useAuth();
   const location = useLocation();
 
   const [tab, setTab] = useState<Tab>('counselor');
@@ -23,12 +30,32 @@ export default function LoginPage() {
   const [alias, setAlias] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [server, setServer] = useState<'checking' | 'ok' | 'down'>('checking');
+
+  // GET /api/health 로 서버가 켜져 있는지 확인한다.
+  useEffect(() => {
+    let cancelled = false;
+    checkServer().then((result) => !cancelled && setServer(result));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // 서버 세션을 확인하는 동안에는 로그인 폼을 보여주지 않는다.
+  if (status === 'loading') {
+    return (
+      <main className="center-screen" role="status">
+        <p className="muted">로그인 상태를 확인하는 중이에요.</p>
+      </main>
+    );
+  }
 
   // 이미 로그인했거나 방금 로그인했다면 역할에 맞는 첫 화면으로 보낸다.
   if (user) {
     const home = HOME_PATH[user.role];
+    const base = `/${home.split('/')[1]}`; // 예: /admin, /counselor, /client
     const from = (location.state as { from?: string } | null)?.from;
-    return <Navigate to={from && from.startsWith(home) ? from : home} replace />;
+    return <Navigate to={from && from.startsWith(base) ? from : home} replace />;
   }
 
   const selectTab = (next: Tab) => {
@@ -48,7 +75,7 @@ export default function LoginPage() {
     try {
       await loginStaff(email, password, tab as 'counselor' | 'admin');
     } catch (err) {
-      setError(err instanceof Error ? err.message : '로그인하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      setError(describeLoginError(err));
       setBusy(false);
     }
   };
@@ -59,7 +86,6 @@ export default function LoginPage() {
     await enterClient(alias);
   };
 
-  const demo = getDb().accounts.find((a) => a.role === tab);
 
   return (
     <div className="login">
@@ -171,25 +197,23 @@ export default function LoginPage() {
                 {busy ? '로그인하는 중이에요' : '로그인'}
               </button>
 
-              {import.meta.env.DEV && demo ? (
-                <div className="dev-hint">
-                  <span>개발용 계정(실제 서비스에서는 사라져요)</span>
-                  <code>{demo.email}</code>
-                  <code>{demo.password}</code>
-                  <button
-                    type="button"
-                    className="btn btn--quiet btn--sm"
-                    onClick={() => {
-                      setEmail(demo.email);
-                      setPassword(demo.password);
-                    }}
-                  >
-                    계정 정보 입력하기
-                  </button>
-                </div>
+              {import.meta.env.DEV ? (
+                <p className="dev-hint">
+                  <span>개발용 안내</span>
+                  <span>Spring Boot(localhost:8080)에 등록된 계정으로 로그인해요. 비밀번호는 팀에서 따로 전달받으세요.</span>
+                </p>
               ) : null}
             </form>
           )}
+
+          <p className="field__hint" role="status">
+            서버 상태:{' '}
+            {server === 'checking'
+              ? '확인하는 중이에요'
+              : server === 'ok'
+                ? '연결됨'
+                : '연결되지 않았어요. Spring Boot가 켜져 있는지(localhost:8080) 확인해 주세요.'}
+          </p>
         </div>
       </section>
     </div>

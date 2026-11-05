@@ -7,8 +7,8 @@ export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login', { replace: true });
   };
 
@@ -18,6 +18,9 @@ export default function AdminLayout() {
         <div className="topbar__inner">
           <Brand to="/admin" />
           <nav className="topbar__nav" aria-label="관리자 메뉴">
+            <NavLink to="/admin/cases" className="topbar__link">
+              사례 목록
+            </NavLink>
             <NavLink to="/admin" end className="topbar__link">
               접근 로그
             </NavLink>

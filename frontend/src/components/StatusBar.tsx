@@ -1,10 +1,10 @@
-import type { CaseStatus, CounselingCase } from '../types';
+import type { CaseStatus } from '../types';
 import StatusBadge from './StatusBadge';
 
 const ORDER: CaseStatus[] = ['접수', '진행', '종결', '연계'];
 
 /** 사례 상태별 건수를 한 줄 막대와 범례로 보여준다. (F-03) */
-export default function StatusBar({ cases }: { cases: CounselingCase[] }) {
+export default function StatusBar({ cases }: { cases: Array<{ status: CaseStatus | null }> }) {
   const counts = ORDER.map((status) => ({ status, count: cases.filter((c) => c.status === status).length }));
   const summary = counts.map((c) => `${c.status} ${c.count}건`).join(', ');
 

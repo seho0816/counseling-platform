@@ -5,29 +5,72 @@ React + TypeScript + Vite로 만들었고, **백엔드와 AI가 없어도 필수
 
 ## 실행
 
+Spring Boot(백엔드)와 React(프론트엔드)를 터미널 2개로 함께 켠다. Node.js 18 이상, JDK 23이 필요하다.
+
+**터미널 1 — Spring Boot** (`.env`는 GitHub에 올라가지 않으므로 따로 전달받는다)
+
 ```bash
-npm install
-npm run dev        # http://localhost:5173
-npm run build      # 타입 검사 + 빌드
+cd counseling-platform/backend
+set -a
+source ../.env
+set +a
+./gradlew bootRun
 ```
 
-Node.js 18 이상이 필요합니다. 압축을 풀면 생기는 `mindnote-frontend` 폴더 안에서 실행하세요.
+**터미널 2 — React**
 
-## 개발용 계정
+```bash
+cd counseling-platform/frontend
+npm install        # 처음 한 번
+npm run dev        # http://localhost:5173
+```
 
-| 역할 | 이메일 | 비밀번호 |
+Spring Boot는 `localhost:8080`, React는 `localhost:5173`에서 실행한다.
+프론트에서는 `http://localhost:8080`을 직접 쓰지 않고 `/api/...`로만 요청한다. Vite 프록시(`vite.config.ts`)가 `/api`를 8080으로 전달한다. 이 설정을 바꾸면 Vite를 다시 시작해야 한다.
+
+## 백엔드 연동 현황
+
+| 화면·기능 | 데이터 | 비고 |
 | --- | --- | --- |
-| 상담사 (한서윤, 담당 사례 10건) | counselor@mindnote.test | counselor1234 |
-| 상담사 (김도현, 박지민 등) | counselor2@mindnote.test … counselor8@mindnote.test | counselor1234 |
-| 기관 관리자 | admin@mindnote.test | admin1234 |
-| 내담자 | (없음) | 이름(가명)만 입력하고 입장 |
+| 서버 상태(로그인 화면) | **실제 API** | `GET /api/health` → "서버 상태: 연결됨" |
+| 로그인·로그아웃(상담사, 관리자) | **실제 API** | CSRF → 로그인(form) → CSRF 갱신 → `/api/auth/me` |
+| 로그인 여부 판단 | **실제 API** | 앱을 열 때 `GET /api/auth/me`. 사용자 정보를 브라우저에 저장하지 않음 |
+| 사례 목록(`/counselor/cases`, `/admin/cases`) | **실제 API** | `GET /api/cases?page=&size=`. 관리자는 전체, 상담사는 본인 배정 사례. 관리자 목록은 상담사 이름 표시 |
+| 사례 상세(`/counselor/cases/:id`, `/admin/cases/:id`) | **실제 API** | `GET /api/cases/{id}`. 회기·요약 영역은 "구현 예정" 자리 |
+| 사례 등록(`/admin/cases/new`, 관리자) | **실제 API** | 내담자 등록 `POST /api/admin/clients` → 사례 생성 `POST /api/admin/cases`. 이미 등록한 내담자는 번호로 선택(내담자 목록 API 없음) |
+| 상담사 배정·해제(사례 상세, 관리자) | **실제 API** | `PATCH /api/admin/cases/{id}/assignment` (`counselorId: null`이면 해제) |
+| 상담사 홈(상태 현황) | **실제 API** | 같은 `GET /api/cases` |
+| 계정·권한(`/admin/accounts`) | **실제 API** | 상담사 목록 `GET /api/admin/counselors`, 등록 `POST /api/admin/counselors`. **사용 중지 버튼은 API가 없어 비활성 표시** |
+| 내담자 입장 | 가상 | 백엔드에 내담자 로그인이 없음(가상 입장) |
+| 상담사용 사례 등록(`/counselor/cases/new`), 회기 기록, AI 요약 | 가상(Mock) | 화면 위에 "가상 데이터 화면" 안내가 표시됨. 백엔드는 사례 생성을 관리자만 허용함 |
+| 챗봇, 상담사 찾기 | 가상(Mock) | 같은 안내 표시 |
+| 접근 로그 | 가상(Mock) | 같은 안내 표시 |
 
-`npm run dev`에서는 로그인 화면에 계정 정보가 보이고, 상담사 화면 왼쪽 아래에 **개발용 도구**가 나타납니다.
+**백엔드에 이미 있는 API(2026-11-03 가이드 기준 12개)는 모두 연결되어 있다.** 남은 가상(Mock) 화면은 백엔드 API가 없는 기능이다.
 
-- **AI 요약 실패 흉내**: 켜면 요약 생성이 실패해 오류 안내와 "직접 작성하기" 경로를 확인할 수 있어요.
-- **Mock 데이터 초기화**: 지금까지 만든 사례·기록·로그를 지우고 처음 상태로 돌려요.
+가상 데이터 화면에는 `src/components/MockNotice.tsx` 안내가 붙는다(`App.tsx`의 `<Mock>` 래퍼). 화면을 실제 API로 연결하면 그 화면의 `<Mock>` 래퍼를 뺀다.
 
-모든 데이터는 가상입니다. 실제 개인정보를 넣지 마세요.
+로그인은 상담사·관리자 모두 백엔드에 등록된 계정을 쓴다. 비밀번호는 팀에서 따로 전달받는다. 처음 확인할 때는 관리자 계정이 편하다(상담사 계정은 본인에게 배정된 사례만 보인다).
+
+### 연동 코드 위치
+
+| 파일 | 역할 |
+| --- | --- |
+| `src/api/http.ts` | 공통 요청. `credentials: 'include'`, CSRF 토큰 보관·갱신, 403이면 토큰을 새로 받아 한 번 재시도, 401이면 로그인 상태 해제, 오류 문구 |
+| `src/api/authApi.ts` | 로그인·로그아웃·`/me`. 백엔드 역할(ADMIN·COUNSELOR)을 화면 역할로 변환 |
+| `src/api/remoteCaseApi.ts` | `fetchCases()`, `fetchCase(id)`와 응답 변환(숫자 ID, 영어 상태, null 필드) |
+| `src/api/remoteAdminApi.ts` | 상담사 목록·등록, 내담자 등록, 사례 생성, 상담사 배정, 입력 검사(백엔드 규칙과 동일) |
+| `src/api/healthApi.ts` | 서버 상태 확인(`/api/health`) |
+| `src/constants/labels.ts` | 상태 변환표(RECEIVED→접수, IN_PROGRESS→진행, CLOSED→종결, REFERRED→연계) |
+| `src/api/caseApi.ts`, `adminApi.ts` 등 기존 파일 | Mock. 아직 쓰는 화면(가상 데이터 화면)이 있어 그대로 둠 |
+| `src/pages/counselor/CaseDetailMockPage.tsx` | 예전 Mock 사례 상세(보존용, 라우트 연결 없음). 회기·상태 변경을 실제 API로 만들 때 참고 |
+
+### 로그인이 안 될 때
+- `서버에 연결하지 못했어요` → Spring Boot가 켜져 있는지 확인(`http://localhost:8080/api/health`가 OK인지).
+- `이메일 또는 비밀번호가 맞지 않아요` → 백엔드에 등록된 이메일(소문자)과 비밀번호인지 확인.
+- 로그인은 되는데 목록이 비어 있음 → 상담사 계정이면 본인에게 배정된 사례만 보인다. 관리자 계정으로 확인.
+- 설정을 바꿨는데 반영이 안 됨 → Vite 개발 서버를 다시 시작.
+
 
 ## 구현된 흐름
 
@@ -51,13 +94,20 @@ Node.js 18 이상이 필요합니다. 압축을 풀면 생기는 `mindnote-front
 
 예약 확정과 상담 방식 선택(X-04, X-05)은 아직 없습니다.
 
-## 직접 따라 해 보기 (약 5분)
+## 첫 연동 확인 순서
 
-1. **내담자**로 입장(이름 `하늘`) → 챗봇 안내 → 초기 질문지 작성 → "힘든 점"에 `사라지고 싶다는 생각이 들어요` 입력 → 고정 응답 확인 → 접수 이어가기 → 접수
-2. **상담사** `counselor@mindnote.test` 로그인 → 홈 맨 위에 위기 표시 사례 → 열기 → 상담 시작(진행으로 변경) → 회기 추가 → 기록 저장
-3. 회기 화면에서 AI 요약 만들기 → 원문 근거 보기 → 내용 고치기 → 확정하여 저장
-4. 주소창에서 `/counselor/cases/case-011` 로 이동 → 담당 외 사례라서 차단됨
-5. **관리자** `admin@mindnote.test` 로그인 → 접근 로그에서 "차단된 시도만 보기" → 방금 시도한 기록 확인 → 계정·권한에서 상담사 사용 중지
+1. Spring Boot와 React를 각각 실행한다(위 "실행" 참고). `http://localhost:8080/api/health`가 `OK`인지 먼저 본다.
+2. 브라우저에서 `http://localhost:5173/login` → "기관 관리자" 탭 → 백엔드에 등록된 관리자 계정으로 로그인한다.
+3. 개발자 도구 Network 탭에서 `csrf` → `login` → `csrf` → `me` 순서로 모두 200인지 확인한다.
+4. 자동으로 `/admin/cases`(전체 사례 목록)가 열린다. Network 탭의 `cases?page=0&size=20`이 200이고, 표에 Supabase의 가상 상담 사례가 보이는지 확인한다.
+5. Supabase에서 사례 제목을 수정하고, 화면의 "다시 불러오기"(또는 새로고침)를 눌러 변경된 제목이 보이는지 확인한다.
+6. 목록에서 이름을 누르면 사례 상세가 열린다(`GET /api/cases/{id}`).
+7. 관리자의 "계정·권한"에서 서버의 상담사 계정이 보이는지 확인하고, 상담사 계정을 하나 등록해 본다(비밀번호 12자 이상).
+8. 사례 목록의 "새 사례 등록"으로 가상 내담자와 사례를 만들고(가상 데이터만 입력), 사례 상세의 "상담사 배정"에서 상담사를 배정·해제해 본다. Supabase에서 같은 데이터가 보이는지 확인한다.
+9. (선택) 배정된 상담사 계정으로 로그인하면 `/counselor`와 `/counselor/cases`에 본인에게 배정된 사례만 보이고, 남의 사례 주소는 열리지 않는다(404 안내).
+
+> 상담사·관리자 로그인이 실제 백엔드 계정으로 바뀌어서, 예전 Mock 계정(`counselor@mindnote.test` 등)으로는 로그인할 수 없다.
+> 사례 상세·회기 기록·AI 요약 같은 Mock 화면은 API가 연결되기 전까지 상담사 로그인으로는 열어도 데이터가 맞지 않는다.
 
 ## 폴더 구조
 
@@ -103,8 +153,12 @@ src/
 - 상담 분야 분류: `src/constants/fields.ts`
 - 글꼴(Pretendard)은 CDN으로 불러옵니다. 오프라인이면 `index.html`을 바꾸세요.
 
-## 다음 단계
+## 다음 단계 (백엔드 API가 만들어지면)
 
-1. 예약 확정·상담 방식 선택 (X-04, X-05)
-2. 요약 생성·사례·로그 API를 백엔드·AI와 합의한 명세로 연결
-3. 정상·예외 테스트 케이스 작성(WBS 5.1), 사용성 시범 사용
+1. 회기 생성·조회, AI 요약 생성·저장·확정 → 사례 상세의 "구현 예정" 자리를 연결(요약은 AI 응답 JSON 3항목 구조에 맞춤)
+2. 챗봇 접수(질문지 저장, 위기 표시) → 챗봇 화면 연결
+3. 접근 로그 기록·조회 → 접근 로그 화면 연결
+4. 계정 사용 중지·재사용 → 계정·권한의 비활성 버튼 연결
+5. 내담자 목록 조회 → 사례 등록에서 번호 입력 대신 선택으로 바꾸기
+6. 사례 상태 변경, 상태 조건 조회 → 상태 변경·목록 필터 연결
+연결한 화면은 `App.tsx`의 `<Mock>` 래퍼를 뺀다.

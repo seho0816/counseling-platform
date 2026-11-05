@@ -1,87 +1,82 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listCases } from '../../api/caseApi';
+import { fetchCases, type CasePage } from '../../api/remoteCaseApi';
+import { describeApiError } from '../../api/http';
 import { useAuth } from '../../auth/AuthContext';
 import PageHead from '../../components/PageHead';
 import StateMessage from '../../components/StateMessage';
 import StatusBadge from '../../components/StatusBadge';
 import StatusBar from '../../components/StatusBar';
-import type { CounselingCase } from '../../types';
-import { formatRelativeDay } from '../../utils/schedule';
+import { formatDateTime } from '../../utils/schedule';
 
+const SAMPLE = 50; // 백엔드가 한 번에 줄 수 있는 최대 건수
+
+/** 상담사 홈 — 배정된 사례의 상태 현황을 실제 API(GET /api/cases)로 보여준다. */
 export default function CounselorHome() {
   const { user } = useAuth();
-  const [cases, setCases] = useState<CounselingCase[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [data, setData] = useState<CasePage | null>(null);
+  const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
 
   useEffect(() => {
-    if (!user) return;
     let cancelled = false;
-    setFailed(false);
-    listCases(user)
-      .then((data) => !cancelled && setCases(data))
-      .catch(() => !cancelled && setFailed(true));
+    setError('');
+    fetchCases(0, SAMPLE)
+      .then((result) => !cancelled && setData(result))
+      .catch((e) => !cancelled && setError(describeApiError(e, '사례를 불러오지 못했어요.')));
     return () => {
       cancelled = true;
     };
-  }, [user, retry]);
+  }, [retry]);
 
   const today = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' });
 
-  // 먼저 확인할 사례: 위기 표시 → 요약 검토·작성이 필요한 사례 순서
-  const attention = (cases ?? [])
-    .filter((c) => c.crisisFlag || c.summaryState === 'draft' || c.summaryState === 'missing')
-    .sort((a, b) => Number(b.crisisFlag) - Number(a.crisisFlag));
+  // 새로 접수되어 아직 상담을 시작하지 않은 사례를 먼저 보여준다.
+  const received = (data?.items ?? []).filter((c) => c.status === '접수');
 
   return (
     <>
-      <PageHead title={`안녕하세요, ${user?.name} 님`}>오늘은 {today}이에요. 담당 사례 현황과 먼저 확인할 사례를 모았어요.</PageHead>
+      <PageHead title={`안녕하세요, ${user?.name} 님`}>오늘은 {today}이에요. 내게 배정된 사례의 현황이에요.</PageHead>
 
-      {failed ? (
+      {error ? (
         <StateMessage
           role="alert"
-          message="사례를 불러오지 못했어요. 잠시 후 다시 시도해 주세요."
+          message={error}
           action={
             <button type="button" className="btn btn--quiet btn--sm" onClick={() => setRetry((n) => n + 1)}>
               다시 불러오기
             </button>
           }
         />
-      ) : cases === null ? (
+      ) : data === null ? (
         <StateMessage message="담당 사례를 불러오는 중이에요." />
       ) : (
         <>
           <section className="section" aria-labelledby="status-heading">
-            <div className="section__head">
-              <h2 id="status-heading">담당 사례 {cases.length}건의 상태</h2>
-              <Link className="btn btn--primary btn--sm" to="/counselor/cases/new">
-                새 사례 등록
-              </Link>
-            </div>
-            <StatusBar cases={cases} />
+            <h2 id="status-heading">담당 사례 {data.totalElements}건의 상태</h2>
+            <StatusBar cases={data.items} />
+            {data.totalElements > data.items.length ? (
+              <p className="field__hint">최근 {data.items.length}건 기준이에요.</p>
+            ) : null}
           </section>
 
           <section className="section" aria-labelledby="attention-heading">
-            <h2 id="attention-heading">먼저 확인할 사례</h2>
-            {attention.length === 0 ? (
-              <StateMessage message="지금 확인할 사례가 없어요. 새 접수나 요약 초안이 생기면 여기에 나타나요." />
+            <h2 id="attention-heading">새로 접수된 사례</h2>
+            {received.length === 0 ? (
+              <StateMessage message="새로 접수된 사례가 없어요. 접수 상태의 사례가 생기면 여기에 나타나요." />
             ) : (
               <ul className="list">
-                {attention.map((c) => (
+                {received.map((c) => (
                   <li key={c.id} className="list__item">
                     <div>
-                      <p className="list__title">{c.clientAlias}</p>
+                      <p className="list__title">{c.alias}</p>
                       <div className="list__meta">
-                        <StatusBadge status={c.status} />
-                        <span>최근 상담 {formatRelativeDay(c.lastSessionAt)}</span>
-                        {c.crisisFlag ? <span className="tag tag--alert">위기 표시</span> : null}
-                        {c.source === '챗봇 접수' && c.status === '접수' ? <span className="tag">챗봇 접수</span> : null}
-                        {c.summaryState === 'draft' ? <span className="tag">요약 검토 필요</span> : null}
-                        {c.summaryState === 'missing' ? <span className="tag tag--plain">요약 작성 필요</span> : null}
+                        <StatusBadge status="접수" />
+                        <span>{c.title}</span>
+                        <span>등록 {formatDateTime(c.createdAt)}</span>
                       </div>
                     </div>
-                    <Link className="btn btn--quiet btn--sm" to={`/counselor/cases/${c.id}`} aria-label={`${c.clientAlias} 사례 열기`}>
+                    <Link className="btn btn--quiet btn--sm" to={`/counselor/cases/${c.id}`} aria-label={`${c.alias} 사례 열기`}>
                       사례 열기
                     </Link>
                   </li>

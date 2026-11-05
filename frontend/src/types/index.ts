@@ -141,3 +141,76 @@ export interface Account {
   role: 'counselor' | 'admin';
   active: boolean;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Spring Boot API 응답 형태 (Mock 타입과 다르다. 화면에 쓰기 전에 변환한다.) */
+/* ---------------------------------------------------------------------- */
+
+/** 백엔드의 사례 상태(영어 Enum) */
+export type CaseStatusCode = 'RECEIVED' | 'IN_PROGRESS' | 'CLOSED' | 'REFERRED';
+
+/** GET /api/cases 의 items 한 건 */
+export interface ApiCase {
+  id: number;
+  clientId: number;
+  /** 아직 응답에 없을 수 있다(구버전 백엔드) */
+  clientAlias?: string | null;
+  ageGroup?: string | null;
+  counselorId: number | null;
+  title: string;
+  concern?: string | null;
+  status: CaseStatusCode | string;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+/** GET /api/cases 의 응답. 배열이 아니라 items 안에 사례가 들어 있다. */
+export interface ApiCasePage {
+  items: ApiCase[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+/** GET /api/auth/me */
+export interface ApiMe {
+  id: number;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'COUNSELOR' | string;
+}
+
+/** 화면 표시용으로 변환한 사례 */
+export interface CaseRow {
+  id: number;
+  clientId: number;
+  /** 가명. 응답에 없으면 '내담자 #번호' */
+  alias: string;
+  ageGroup: string | null;
+  concern: string | null;
+  title: string;
+  /** 한글 상태. 알 수 없는 값이면 null이고 statusRaw를 보여준다. */
+  status: CaseStatus | null;
+  statusRaw: string;
+  counselorId: number | null;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+/** GET /api/admin/counselors 의 한 건 (비밀번호·해시는 응답에 없다) */
+export interface ApiCounselorAccount {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+  active: boolean;
+}
+
+/** POST /api/admin/clients 의 응답 */
+export interface ApiClient {
+  id: number;
+  name: string;
+  contact: string | null;
+  createdAt: string;
+}
