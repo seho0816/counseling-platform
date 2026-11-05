@@ -1,0 +1,4 @@
+.env
+eval_output/
+__pycache__/
+*.pyc
