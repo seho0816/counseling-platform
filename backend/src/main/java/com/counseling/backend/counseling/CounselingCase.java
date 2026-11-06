@@ -82,6 +82,17 @@ public class CounselingCase {
         this.counselor = counselor;
     }
 
+    /** Changes the case's workflow status; only the service decides who may invoke it. */
+    public void changeStatus(CaseStatus next) {
+        if (next == null) {
+            throw new IllegalArgumentException("Status is required");
+        }
+        if (!status.canTransitionTo(next)) {
+            throw new IllegalStateException("Invalid case status transition: " + status + " -> " + next);
+        }
+        this.status = next;
+    }
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
