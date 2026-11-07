@@ -82,6 +82,17 @@ public class CounselingCase {
         this.counselor = counselor;
     }
 
+    /** Called only by the administrator's intake-conversion service. */
+    public void linkIntakeForm(Long intakeId) {
+        if (intakeId == null || intakeId < 1) {
+            throw new IllegalArgumentException("Valid intake id required");
+        }
+        if (this.intakeFormId != null) {
+            throw new IllegalStateException("Case already linked to an intake form");
+        }
+        this.intakeFormId = intakeId;
+    }
+
     /** Changes the case's workflow status; only the service decides who may invoke it. */
     public void changeStatus(CaseStatus next) {
         if (next == null) {

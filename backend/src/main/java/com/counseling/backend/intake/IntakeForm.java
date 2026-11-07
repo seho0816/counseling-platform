@@ -40,6 +40,10 @@ public class IntakeForm {
     @Column(nullable = false, length = 20)
     private IntakeStatus status = IntakeStatus.SUBMITTED;
 
+    // Legacy rows may be null; public API submissions must always record consent.
+    @Column(name = "privacy_consent_at")
+    private OffsetDateTime privacyConsentAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -71,6 +75,12 @@ public class IntakeForm {
             createdAt = OffsetDateTime.now(ZoneOffset.UTC);
         }
     }
+
+    public void recordPrivacyConsent() {
+        this.privacyConsentAt = OffsetDateTime.now(ZoneOffset.UTC);
+    }
+
+    public OffsetDateTime getPrivacyConsentAt() { return privacyConsentAt; }
 
     public void markProcessed() {
         status = IntakeStatus.PROCESSED;

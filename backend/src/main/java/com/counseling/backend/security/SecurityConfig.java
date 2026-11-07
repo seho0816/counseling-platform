@@ -33,6 +33,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/health", "/api/auth/csrf").permitAll()
+                // Only anonymous intake submission is public. Admin reads stay protected.
+                .requestMatchers(HttpMethod.POST, "/api/intakes").permitAll()
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/counselor/**").hasAnyRole("ADMIN", "COUNSELOR")
