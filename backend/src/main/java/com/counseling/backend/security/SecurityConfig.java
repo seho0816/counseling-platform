@@ -1,5 +1,8 @@
 package com.counseling.backend.security;
 
+import com.counseling.backend.audit.AuditLogWriter;
+import com.counseling.backend.audit.AuditRequestFilter;
+import org.springframework.security.web.access.ExceptionTranslationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,7 +28,7 @@ import java.util.List;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, AuditLogWriter auditWriter) throws Exception {
         http
             .cors(Customizer.withDefaults())
             // Session-based login: CSRF must remain enabled.
@@ -57,7 +60,9 @@ public class SecurityConfig {
             )
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                 new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-            .httpBasic(basic -> basic.disable());
+            .httpBasic(basic -> basic.disable())
+            // Observe authorization failures and controller results after login filters.
+            .addFilterBefore(new AuditRequestFilter(auditWriter), ExceptionTranslationFilter.class);
         return http.build();
     }
 
