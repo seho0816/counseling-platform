@@ -171,13 +171,33 @@ class SummaryServiceTest(unittest.TestCase):
         self.assertNotIn("next_plan", p)
 
 
-    def test_기본_프롬프트는_v5이고_접수는_호소가_아니라는_규칙이_있다(self):
-        p = core.load_prompt()
-        self.assertEqual(core.PROMPT_VERSION, "v5")
-        self.assertIn("complaint에 쓰지 않는다", p)
-        self.assertIn("접수", p)
+    def test_프롬프트_버전은_파일_이름에서_읽는다(self):
+        base = os.path.join(HERE, "..", "prompts")
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AI_PROMPT_FILE", None)
+            self.assertEqual(core.prompt_version(), "v5")
+            os.environ["AI_PROMPT_FILE"] = os.path.join(base, "summary_prompt_v6.txt")
+            self.assertEqual(core.prompt_version(), "v6")
+            os.environ["AI_PROMPT_FILE"] = "other.txt"
+            self.assertEqual(core.prompt_version(), "custom")
+
+    def test_프롬프트에_접수는_호소가_아니라는_규칙이_있고_v6은_규칙이_더_있다(self):
+        base = os.path.join(os.path.dirname(HERE), "prompts")
+        v5 = open(os.path.join(base, "summary_prompt_v5.txt"), encoding="utf-8").read()
+        v6 = open(os.path.join(base, "summary_prompt_v6.txt"), encoding="utf-8").read()
+        for p in (v5, v6):
+            self.assertIn("complaint에 쓰지 않는다", p)
+            self.assertIn("접수", p)
+        self.assertIn("경청함", v6)
+        self.assertNotIn("경청함", v5)
         s, _ = service(GOOD)
-        self.assertEqual(s.summarize("기록")["promptVersion"], "v5")
+        self.assertEqual(s.summarize("기록")["promptVersion"], core.PROMPT_VERSION)
+
+    def test_한도_뒤_기다리는_시간은_상한이_있다(self):
+        sleeps = []
+        s, _ = service(AiRateLimitError("q", retry_after=50), GOOD, sleeps=sleeps)
+        s.summarize("기록")
+        self.assertEqual(sleeps, [core.MAX_RETRY_WAIT])
 
 
 class EvalToolTest(unittest.TestCase):
@@ -210,6 +230,19 @@ class EvalToolTest(unittest.TestCase):
         bad = {"complaint": "질문지 작성", "intervention": "x", "nextPlan": "y"}
         self.assertEqual(run_eval.evaluate_case(case, ok, True)[0], "PASS")
         self.assertEqual(run_eval.evaluate_case(case, bad, True)[0], "FAIL")
+
+    def test_항목이_너무_길면_경고(self):
+        case = {"record": "기록", "expect": {"max_len": 10}}
+        long_out = {"complaint": "가" * 11, "intervention": "x", "nextPlan": "y"}
+        v, notes = run_eval.evaluate_case(case, long_out, True)
+        self.assertEqual(v, "WARN")
+        self.assertIn("complaint", notes[0])
+        self.assertEqual(run_eval.evaluate_case(case, {"complaint": "a", "intervention": "x", "nextPlan": "y"}, True)[0], "PASS")
+
+    def test_중요한_정보가_빠지면_실패(self):
+        case = {"record": "기록", "expect": {"keep": [["약물", "처방"]]}}
+        self.assertEqual(run_eval.evaluate_case(case, {"complaint": "불안", "intervention": "x", "nextPlan": "y"}, True)[0], "FAIL")
+        self.assertEqual(run_eval.evaluate_case(case, {"complaint": "약 처방을 받음", "intervention": "x", "nextPlan": "y"}, True)[0], "PASS")
 
     def test_빈_기록에서_AI를_부르면_실패(self):
         case = {"record": "", "expect": {"error": "EMPTY_RECORD", "llm_called": False}}

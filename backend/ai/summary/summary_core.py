@@ -8,11 +8,25 @@ import os
 import re
 import time
 
-PROMPT_VERSION = "v5"
 FIELDS = ("complaint", "intervention", "nextPlan")
 NO_RECORD = "기록에 없음"
 DEFAULT_MAX_CHARS = 20000
 HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_PROMPT_FILE = "summary_prompt_v5.txt"
+MAX_RETRY_WAIT = 25  # 호출 한도(429) 뒤 기다리는 시간의 상한(초). 백엔드 대기 시간 안에 끝내려고 둔다
+
+
+def prompt_path():
+    return os.environ.get("AI_PROMPT_FILE") or os.path.join(HERE, "prompts", DEFAULT_PROMPT_FILE)
+
+
+def prompt_version():
+    """프롬프트 파일 이름(summary_prompt_v6.txt)에서 버전을 읽는다. 이름 형식이 다르면 'custom'."""
+    m = re.search(r"summary_prompt_(v\d+)", os.path.basename(prompt_path()))
+    return m.group(1) if m else "custom"
+
+
+PROMPT_VERSION = prompt_version()
 
 
 def max_chars():
@@ -122,7 +136,7 @@ def parse_summary(raw):
 
 
 def load_prompt():
-    path = os.environ.get("AI_PROMPT_FILE") or os.path.join(HERE, "prompts", "summary_prompt_v5.txt")
+    path = prompt_path()
     try:
         with open(path, encoding="utf-8") as f:
             return f.read()
@@ -151,7 +165,7 @@ class SummaryService:
             except AiRateLimitError as e:
                 last = e
                 if attempt < self.max_retries:
-                    self.sleep(min(e.retry_after or 20, 60))
+                    self.sleep(min(e.retry_after or 20, MAX_RETRY_WAIT))
                     continue
                 raise
             except (AiInvalidResponseError, AiUnavailableError) as e:

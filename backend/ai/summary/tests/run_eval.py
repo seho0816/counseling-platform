@@ -1,9 +1,10 @@
-"""요약 기능 평가: 가상 상담 기록 18개 + API 오류 처리 6개를 돌려 결과표를 만든다.
+"""요약 기능 평가: 가상 상담 기록 26개 + API 오류 처리 6개를 돌려 결과표를 만든다.
 
 사용법 (backend/ai/summary 폴더에서)
   export GEMINI_API_KEY=키        # 키는 환경 변수로만 넣는다
   py tests/run_eval.py            # 실제 LLM 호출, eval_output/에 결과 저장
   py tests/run_eval.py --fake     # 키 없이 시험 도구만 점검 (LLM 결과가 아니다)
+  py tests/run_eval.py --tag v6   # 결과 파일 이름에 _v6을 붙인다 (프롬프트를 바꿔 비교할 때)
 무료 한도(분당 15회) 때문에 호출 사이에 4.5초 쉰다 (--delay로 조절).
 """
 import argparse
@@ -54,6 +55,9 @@ def evaluate_case(case, result, llm_called):
         for g in groups:
             if not any(a in result.get(f, "") for a in g):
                 problems.append("%s에 %s가 없음" % (f, "/".join(g)))
+    for group in exp.get("keep", []):
+        if not any(a in " ".join(result.get(f, "") for f in FIELDS) for a in group):
+            problems.append("원문의 중요한 정보가 빠짐: " + "/".join(group))
     for f, words in exp.get("forbid_fields", {}).items():
         for w in words:
             if w in result.get(f, ""):
@@ -62,6 +66,10 @@ def evaluate_case(case, result, llm_called):
     for w in exp.get("forbid", []):
         if w in joined:
             problems.append("기록에 없는 말이 나옴: " + w)
+    if exp.get("max_len"):
+        too_long = [f for f in FIELDS if len(result.get(f, "")) > exp["max_len"]]
+        if too_long:
+            warns.append("항목이 %d자를 넘음: %s" % (exp["max_len"], ",".join("%s(%d자)" % (f, len(result[f])) for f in too_long)))
     extra = sorted(set(re.findall(r"\d+", joined)) - set(re.findall(r"\d+", case["record"])), key=int)
     if extra:
         warns.append("기록에 없는 숫자 확인 필요: " + ",".join(extra))
@@ -78,6 +86,8 @@ def fake_answer(case):
             out[f] = NO_RECORD
         else:
             words = [g[0] for g in exp.get("include", {}).get(f, [])]
+            if f == "complaint":
+                words += [g[0] for g in exp.get("keep", [])]
             out[f] = " ".join(words) if words else "내용"
     return json.dumps(out, ensure_ascii=False)
 
@@ -110,6 +120,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fake", action="store_true")
     ap.add_argument("--delay", type=float, default=4.5)
+    ap.add_argument("--tag", default="")  # 결과 파일 이름에 붙일 말 (예: v6)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(HERE), "eval_output"))
     args = ap.parse_args()
     cases = json.load(open(os.path.join(HERE, "eval_cases.json"), encoding="utf-8"))["cases"]
@@ -133,7 +144,7 @@ def main():
             time.sleep(args.delay)
     scen = run_scenarios()
     os.makedirs(args.out, exist_ok=True)
-    tag = "FAKE" if args.fake else "LLM"
+    tag = ("FAKE" if args.fake else "LLM") + (("_" + args.tag) if args.tag else "")
     model = "fake" if args.fake else real.model
     with open(os.path.join(args.out, "eval_results_%s.csv" % tag), "w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)

@@ -3,6 +3,7 @@
 사용법 (backend/ai/summary 폴더에서)
   python tests/live_check.py          # 실제 Gemini 호출 (키 필요: GEMINI_API_KEY 또는 이 폴더의 .env), 약 1~2분
   python tests/live_check.py --fake   # 키 없이 도구만 점검 (가짜 응답이므로 Gemini 검증이 아니다)
+  python tests/live_check.py --extra   # 네트워크 오류와 호출 한도(429)를 실제 호출 경로로 확인 (1~3분, 한도에 일부러 닿는다)
 결과: eval_output/live_check_report.md, live_check_results.csv
 무료 한도(분당 15회) 때문에 Gemini 호출 사이에 4.5초 쉰다 (--delay로 조절).
 """
@@ -23,7 +24,8 @@ import urllib.request
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
-from summary_core import NO_RECORD, PROMPT_VERSION, AiAuthError, SummaryService, max_chars  # noqa: E402
+from summary_core import (NO_RECORD, PROMPT_VERSION, AiAuthError, AiRateLimitError, AiUnavailableError,  # noqa: E402
+                          SummaryService, max_chars)
 from llm_clients import FakeClient, GeminiClient, load_dotenv  # noqa: E402
 from server import make_server  # noqa: E402
 
@@ -87,11 +89,91 @@ RECORD_NAME = "김하늘 내담자는 최근 잠을 못 잔다고 하였다. 김
 FIELDS = ("complaint", "intervention", "nextPlan")
 
 
+def run_extra(args, fake):
+    """네트워크 오류와 호출 한도(429)를 실제 라이브러리 경로로 확인한다."""
+    rows = []
+
+    def add(item, expected, actual, ok, note=""):
+        verdict = "통과" if ok is True else ("실패" if ok is False else str(ok))
+        rows.append((item, expected, actual, verdict, note))
+        say("[%s] %s %s" % (verdict, item, note))
+
+    # 1) 네트워크 오류: 존재하지 않는 프록시로 연결을 막아 실제 라이브러리의 연결 실패를 만든다
+    proxy_keys = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
+    saved = {k: os.environ.get(k) for k in proxy_keys}
+    try:
+        if fake:
+            client = FakeClient(AiUnavailableError("fake"))
+        else:
+            for k in proxy_keys:
+                os.environ[k] = "http://127.0.0.1:9"
+            client = GeminiClient()
+        server, port = start_server(SummaryService(client, max_retries=0, sleep=lambda s: None))
+        with contextlib.redirect_stdout(io.StringIO()):
+            st, p, sec = http(port, "POST", "/api/ai/summary", {"recordText": "내담자는 최근 잠을 잘 못 잔다고 하였다."})
+        server.shutdown()
+        server.server_close()
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    add("네트워크 오류(연결 차단)", "502 AI_UNAVAILABLE, manualInput true", "%s %s %s (%.1f초)" % (st, p.get("error"), p.get("manualInput"), sec),
+        st == 502 and p.get("error") == "AI_UNAVAILABLE" and p.get("manualInput") is True, "프록시를 막아 실제 연결 실패를 만듦" if not fake else "가짜 응답")
+
+    # 2) 호출 한도: 짧은 요청을 연달아 보내 429를 만나고, 기다린 뒤 회복되는지 본다
+    if fake:
+        client = FakeClient("{\"complaint\":\"a\",\"intervention\":\"b\",\"nextPlan\":\"c\"}", AiRateLimitError("q", retry_after=1),
+                            "{\"complaint\":\"a\",\"intervention\":\"b\",\"nextPlan\":\"c\"}")
+    else:
+        client = GeminiClient()
+    server, port = start_server(SummaryService(client, max_retries=0, sleep=lambda s: None))
+    hit = None
+    with contextlib.redirect_stdout(io.StringIO()):
+        for i in range(1, 31):
+            st, p, sec = http(port, "POST", "/api/ai/summary", {"recordText": "내담자는 최근 잠을 잘 못 잔다고 하였다."})
+            if st == 429:
+                hit = (i, p)
+                break
+            if st != 200:
+                hit = (i, p)
+                break
+    if hit and hit[1].get("error") == "AI_RATE_LIMITED":
+        wait = int(hit[1].get("retryAfterSeconds") or 60)
+        add("호출 한도(429)", "429 AI_RATE_LIMITED, manualInput true", "%d번째 호출에서 429, 대기 %d초" % (hit[0], wait),
+            st == 429 and hit[1].get("manualInput") is True, "retryAfterSeconds=%s" % hit[1].get("retryAfterSeconds"))
+        time.sleep(0 if fake else wait + 3)
+        with contextlib.redirect_stdout(io.StringIO()):
+            st2, p2, _ = http(port, "POST", "/api/ai/summary", {"recordText": "내담자는 최근 잠을 잘 못 잔다고 하였다."})
+        add("한도 뒤 회복", "기다린 뒤 200", "%s" % st2, st2 == 200, "대기 후 다시 호출")
+    elif hit:
+        add("호출 한도(429)", "429 AI_RATE_LIMITED", "%d번째에서 %s %s" % (hit[0], st, hit[1].get("error")), False, "한도가 아닌 다른 오류")
+    else:
+        add("호출 한도(429)", "30번 안에 429", "30번 모두 성공", "한도에 닿지 않음", "무료 한도가 더 크거나 요금제가 다름")
+    server.shutdown()
+    server.server_close()
+
+    os.makedirs(args.out, exist_ok=True)
+    lines = ["# AI 요약 서버 추가 검증 (네트워크 오류, 호출 한도)", "",
+             "- 실행: %s, 프롬프트: %s" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), PROMPT_VERSION)]
+    if fake:
+        lines.append("- **가짜 응답으로 도구만 점검한 결과이며 실제 검증이 아니다.**")
+    lines += ["", "| 항목 | 기대 | 실제 | 판정 | 메모 |", "| --- | --- | --- | --- | --- |"]
+    for r in rows:
+        lines.append("| %s | %s | %s | %s | %s |" % tuple(str(x).replace("|", "/") for x in r))
+    with open(os.path.join(args.out, "live_check_extra_report.md"), "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    say("\n결과: %s" % args.out)
+    sys.exit(1 if any(r[3] == "실패" for r in rows) else 0)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fake", action="store_true")
     ap.add_argument("--delay", type=float, default=4.5)
     ap.add_argument("--repeat", type=int, default=5)
+    ap.add_argument("--extra", action="store_true")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(HERE), "eval_output"))
     args = ap.parse_args()
     fake = args.fake
@@ -99,6 +181,8 @@ def main():
         load_dotenv()
         if not os.environ.get("GEMINI_API_KEY"):
             sys.exit("GEMINI_API_KEY가 없습니다. 환경 변수나 이 폴더의 .env에 넣으세요.")
+    if args.extra:
+        return run_extra(args, fake)
     LIVE = "가짜 응답(도구 점검)" if fake else "실제 Gemini 호출"
     SERVER = "서버만(Gemini 호출 없음)"
     MOCK = "가짜 클라이언트(단위 시험)"
