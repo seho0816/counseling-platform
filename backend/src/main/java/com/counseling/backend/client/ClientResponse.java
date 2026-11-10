@@ -2,9 +2,10 @@ package com.counseling.backend.client;
 
 import java.time.OffsetDateTime;
 
-// This DTO includes contact info and must be returned only by admin-authorized endpoints.
-public record ClientResponse(Long id, String name, String contact, OffsetDateTime createdAt) {
+// Admin-only: contains contact. Do not reuse as a public case DTO.
+public record ClientResponse(Long id, String name, String contact, String ageGroup, OffsetDateTime createdAt) {
     public static ClientResponse from(Client client) {
-        return new ClientResponse(client.getId(), client.getName(), client.getContact(), client.getCreatedAt());
+        return new ClientResponse(client.getId(), client.getName(), client.getContact(),
+            client.getAgeGroup(), client.getCreatedAt());
     }
 }

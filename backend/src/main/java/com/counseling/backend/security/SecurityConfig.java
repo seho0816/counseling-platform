@@ -1,5 +1,8 @@
 package com.counseling.backend.security;
 
+import com.counseling.backend.audit.AuditLogWriter;
+import com.counseling.backend.audit.AuditRequestFilter;
+import org.springframework.security.web.access.ExceptionTranslationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -25,7 +28,7 @@ import java.util.List;
 public class SecurityConfig {
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, AuditLogWriter auditWriter) throws Exception {
         http
             .cors(Customizer.withDefaults())
             // Session-based login: CSRF must remain enabled.
@@ -33,6 +36,8 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/health", "/api/auth/csrf").permitAll()
+                // Only anonymous intake submission is public. Admin reads stay protected.
+                .requestMatchers(HttpMethod.POST, "/api/intakes").permitAll()
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/counselor/**").hasAnyRole("ADMIN", "COUNSELOR")
@@ -55,7 +60,9 @@ public class SecurityConfig {
             )
             .exceptionHandling(ex -> ex.authenticationEntryPoint(
                 new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
-            .httpBasic(basic -> basic.disable());
+            .httpBasic(basic -> basic.disable())
+            // Observe authorization failures and controller results after login filters.
+            .addFilterBefore(new AuditRequestFilter(auditWriter), ExceptionTranslationFilter.class);
         return http.build();
     }
 

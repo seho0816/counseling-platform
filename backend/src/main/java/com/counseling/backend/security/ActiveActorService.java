@@ -3,6 +3,7 @@ package com.counseling.backend.security;
 import com.counseling.backend.user.User;
 import com.counseling.backend.user.UserRepository;
 import com.counseling.backend.user.UserRole;
+import java.util.Arrays;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,11 @@ public class ActiveActorService {
     }
 
     public User require(Authentication authentication, UserRole requiredRole) {
+        return requireAny(authentication, requiredRole);
+    }
+
+    /** Rechecks active status and DB role on every request, including role changes. */
+    public User requireAny(Authentication authentication, UserRole... permittedRoles) {
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Login required");
         }
@@ -29,7 +35,8 @@ public class ActiveActorService {
         if (!matchesSession) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Session role is outdated; sign in again");
         }
-        if (actor.getRole() != requiredRole) {
+        if (permittedRoles == null || Arrays.stream(permittedRoles)
+                .noneMatch(role -> role == actor.getRole())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Insufficient permissions");
         }
         return actor;

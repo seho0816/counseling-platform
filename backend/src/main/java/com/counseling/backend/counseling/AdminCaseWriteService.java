@@ -40,7 +40,12 @@ public class AdminCaseWriteService {
         Client client = clients.findById(request.clientId())
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
         User counselor = findValidCounselor(request.counselorId());
-        CounselingCase created = new CounselingCase(client, counselor, request.title().trim());
+        String concern = request.concern() == null ? null : request.concern().trim();
+        if (concern != null && concern.length() > 2000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "concern must be at most 2000 characters");
+        }
+        CounselingCase created = new CounselingCase(client, counselor, request.title().trim(),
+            concern == null || concern.isBlank() ? null : concern);
         return CaseResponse.from(cases.saveAndFlush(created));
     }
 

@@ -9,8 +9,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Set;
+
 @Service
 public class AdminClientCreateService {
+    private static final Set<String> AGE_GROUPS = Set.of(
+        "10대", "20대", "30대", "40대", "50대", "60대 이상"
+    );
+
     private final ClientRepository clients;
     private final ActiveActorService activeActors;
 
@@ -31,7 +37,13 @@ public class AdminClientCreateService {
         if (contact != null && contact.length() > 50) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "contact must be at most 50 characters");
         }
-        Client client = new Client(request.name().trim(), contact == null || contact.isBlank() ? null : contact);
+        String ageGroup = request.ageGroup() == null ? null : request.ageGroup().trim();
+        if (ageGroup != null && ageGroup.isBlank()) ageGroup = null;
+        if (ageGroup != null && !AGE_GROUPS.contains(ageGroup)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid ageGroup");
+        }
+        Client client = new Client(request.name().trim(),
+            contact == null || contact.isBlank() ? null : contact, ageGroup);
         return ClientResponse.from(clients.saveAndFlush(client));
     }
 }

@@ -25,6 +25,10 @@ public class Client {
     @Column(length = 50)
     private String contact;
 
+    // Frontend AgeGroup: 10대, 20대, 30대, 40대, 50대, 60대 이상.
+    @Column(name = "age_group", length = 20)
+    private String ageGroup;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private OffsetDateTime createdAt;
 
@@ -33,8 +37,13 @@ public class Client {
     }
 
     public Client(String name, String contact) {
+        this(name, contact, null);
+    }
+
+    public Client(String name, String contact, String ageGroup) {
         this.name = name;
         this.contact = contact;
+        this.ageGroup = ageGroup;
     }
 
     @PrePersist
@@ -47,5 +56,6 @@ public class Client {
     public Long getId() { return id; }
     public String getName() { return name; }
     public String getContact() { return contact; }
+    public String getAgeGroup() { return ageGroup; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
 }

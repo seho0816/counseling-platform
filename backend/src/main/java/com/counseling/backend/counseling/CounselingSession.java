@@ -58,6 +58,14 @@ public class CounselingSession {
         this.author = author;
     }
 
+    public void updateRecord(LocalDate sessionDate, String content) {
+        if (sessionDate == null || content == null || content.isBlank()) {
+            throw new IllegalArgumentException("Session date and content are required");
+        }
+        this.sessionDate = sessionDate;
+        this.content = content;
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = OffsetDateTime.now();
@@ -92,4 +100,7 @@ public class CounselingSession {
     public User getAuthor() {
         return author;
     }
+
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getUpdatedAt() { return updatedAt; }
 }
