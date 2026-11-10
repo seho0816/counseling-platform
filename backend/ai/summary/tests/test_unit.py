@@ -15,7 +15,7 @@ sys.path.insert(0, HERE)
 import summary_core as core  # noqa: E402
 from summary_core import (AiAuthError, AiInvalidResponseError, AiRateLimitError, AiUnavailableError,  # noqa: E402
                           EmptyRecordError, NotConfiguredError, RecordTooLongError, SummaryService)
-from llm_clients import FakeClient, GeminiClient, classify_exception  # noqa: E402
+from llm_clients import FakeClient, GeminiClient, classify_exception, load_dotenv  # noqa: E402
 from server import make_server  # noqa: E402
 import run_eval  # noqa: E402
 
@@ -103,9 +103,57 @@ class SummaryServiceTest(unittest.TestCase):
         self.assertIn("2026-09-02", sent)
 
     def test_키가_없으면_시작할_때_알려준다(self):
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {"AI_ENV_FILE": os.path.join(HERE, "no_such.env")}, clear=True):
             with self.assertRaises(NotConfiguredError):
                 GeminiClient()
+
+    def test_env_파일에서_키를_읽되_이미_있는_환경_변수는_덮어쓰지_않는다(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".env")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write('# 주석\r\nGEMINI_API_KEY="abc123"\r\nGEMINI_MODEL=m1\r\n\r\nBAD LINE\r\nEMPTY=\r\n')
+            with mock.patch.dict(os.environ, {"GEMINI_MODEL": "keep"}, clear=True):
+                self.assertTrue(load_dotenv(path))
+                self.assertEqual(os.environ["GEMINI_API_KEY"], "abc123")
+                self.assertEqual(os.environ["GEMINI_MODEL"], "keep")
+                self.assertNotIn("EMPTY", os.environ)
+
+    def test_env_파일이_없으면_조용히_넘어간다(self):
+        self.assertFalse(load_dotenv(os.path.join(HERE, "no_such.env")))
+
+    def test_클라이언트가_env_파일의_키를_쓴다(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".env")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("GEMINI_API_KEY=from-file\n")
+            with mock.patch.dict(os.environ, {"AI_ENV_FILE": path}, clear=True):
+                try:
+                    c = GeminiClient()
+                except NotConfiguredError:
+                    return  # google-genai가 없는 환경이면 키 읽기까지만 확인
+                self.assertEqual(c.api_key, "from-file")
+
+    def test_이름은_긴_것부터_가리고_한_글자는_무시한다(self):
+        self.assertEqual(core.mask_terms("김하늘은 하늘을 봤다. 김하늘 님", ["하늘", "김하늘", "가"]), "[이름]은 [이름]을 봤다. [이름] 님")
+        self.assertEqual(core.mask_terms("가나다", ["가"]), "가나다")
+        self.assertEqual(core.mask_terms("그대로", None), "그대로")
+        self.assertEqual(core.mask_terms("그대로", ["", "  ", 5, None]), "그대로")
+
+    def test_이름과_전화번호를_모두_가린_뒤_AI에_보낸다(self):
+        s, c = service(GOOD)
+        s.summarize("김하늘 내담자 연락처 010-1234-5678", ["김하늘"])
+        self.assertNotIn("김하늘", c.calls[0])
+        self.assertNotIn("010-1234-5678", c.calls[0])
+        self.assertIn("[이름]", c.calls[0])
+
+    def test_예상_밖_예외_문구에_기록_내용이_섞여도_오류에는_나오지_않는다(self):
+        s, _ = service(RuntimeError("요청 본문: 김하늘 내담자 기록"))
+        with self.assertRaises(AiUnavailableError) as cm:
+            s.summarize("김하늘 내담자 기록")
+        self.assertNotIn("김하늘", cm.exception.message)
+        self.assertNotIn("김하늘", str(cm.exception.to_dict()))
 
     def test_실제_오류_문구를_분류한다(self):
         self.assertIsInstance(classify_exception(Exception("403 PERMISSION_DENIED. The Gemini API free tier is not available")), AiAuthError)
@@ -216,6 +264,20 @@ class ServerTest(unittest.TestCase):
         s, _ = service(AiRateLimitError("q", retry_after=9))
         status, body = self.post(self.start(s), {"recordText": "기록"})
         self.assertEqual((status, body["error"], body["retryAfterSeconds"]), (429, "AI_RATE_LIMITED", 9))
+
+    def test_maskTerms로_이름을_가려서_보낸다(self):
+        s, c = service(GOOD)
+        status, _ = self.post(self.start(s), {"recordText": "김하늘 내담자 기록", "maskTerms": ["김하늘"]})
+        self.assertEqual(status, 200)
+        self.assertNotIn("김하늘", c.calls[0])
+
+    def test_maskTerms가_잘못되면_400(self):
+        s, c = service(GOOD)
+        port = self.start(s)
+        for bad in ("김하늘", [1, 2], ["가" * 101], ["x"] * 51):
+            status, body = self.post(port, {"recordText": "기록", "maskTerms": bad})
+            self.assertEqual((status, body["error"]), (400, "INVALID_REQUEST"))
+        self.assertEqual(len(c.calls), 0)
 
     def test_없는_주소는_404(self):
         s, _ = service(GOOD)

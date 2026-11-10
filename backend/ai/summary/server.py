@@ -1,6 +1,6 @@
 """백엔드(Spring)가 호출하는 AI 요약 서버. 표준 라이브러리만 쓴다.
 
-POST /api/ai/summary   {"recordText": "..."}  ->  200 초안 JSON 또는 오류 JSON
+POST /api/ai/summary   {"recordText": "...", "maskTerms": ["내담자 이름", ...](선택)}  ->  200 초안 JSON 또는 오류 JSON
 GET  /health           ->  {"status": "OK"}
 기본은 내 컴퓨터(127.0.0.1)에서만 접속된다. 환경 변수: AI_HOST, AI_PORT (기본 8001)
 """
@@ -50,8 +50,12 @@ def make_server(service_factory, host="127.0.0.1", port=8001):
                 return self._send(400, {"error": "INVALID_REQUEST", "message": "JSON을 읽을 수 없습니다", "manualInput": False})
             if not isinstance(body, dict) or "recordText" not in body:
                 return self._send(400, {"error": "INVALID_REQUEST", "message": "recordText 필드가 필요합니다", "manualInput": False})
+            terms = body.get("maskTerms")
+            if terms is not None and not (isinstance(terms, list) and len(terms) <= 50
+                                          and all(isinstance(t, str) and len(t) <= 100 for t in terms)):
+                return self._send(400, {"error": "INVALID_REQUEST", "message": "maskTerms는 문자열 목록(최대 50개)이어야 합니다", "manualInput": False})
             try:
-                self._send(200, service_factory().summarize(body["recordText"]))
+                self._send(200, service_factory().summarize(body["recordText"], terms))
             except SummaryError as e:
                 self._send(e.http_status, e.to_dict())
             except Exception:

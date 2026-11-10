@@ -83,6 +83,19 @@ def mask_pii(text):
     return text
 
 
+MAX_MASK_TERMS = 50
+
+
+def mask_terms(text, terms):
+    """백엔드가 알려 준 이름 등(terms)을 [이름]으로 바꾼다. 한 글자 용어는 무시한다(너무 많이 바뀌므로).
+    긴 용어부터 바꿔서 '김하늘'과 '하늘'이 함께 있어도 안전하다."""
+    cleaned = sorted({t.strip() for t in (terms or []) if isinstance(t, str) and len(t.strip()) >= 2},
+                     key=len, reverse=True)[:MAX_MASK_TERMS]
+    for term in cleaned:
+        text = text.replace(term, "[이름]")
+    return text
+
+
 # ---- 응답 검증 ----
 def parse_summary(raw):
     """AI 응답 문자열 -> {complaint, intervention, nextPlan}. 이상하면 AiInvalidResponseError."""
@@ -124,13 +137,13 @@ class SummaryService:
         self.max_retries = max_retries
         self.sleep = sleep
 
-    def summarize(self, record_text):
+    def summarize(self, record_text, terms=None):
         if not isinstance(record_text, str) or not record_text.strip():
             raise EmptyRecordError("상담 기록이 비어 있습니다")
         text = record_text.strip()
         if len(text) > max_chars():
             raise RecordTooLongError("상담 기록이 너무 깁니다 (최대 %d자)" % max_chars())
-        masked = mask_pii(text)
+        masked = mask_pii(mask_terms(text, terms))
         last = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -150,7 +163,7 @@ class SummaryService:
             except SummaryError:
                 raise  # 키·모델·설정 문제는 다시 해도 소용없다
             except Exception as e:  # 예상 밖 오류는 AI 장애로 취급
-                last = AiUnavailableError(str(e))
+                last = AiUnavailableError("AI 호출 중 알 수 없는 오류가 발생했습니다")  # 예외 문구에 기록이 섞일 수 있어 쓰지 않는다
                 if attempt < self.max_retries:
                     self.sleep(1)
                     continue

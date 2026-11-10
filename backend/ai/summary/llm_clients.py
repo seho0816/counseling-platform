@@ -6,6 +6,27 @@ from summary_core import (AiAuthError, AiInvalidResponseError, AiModelNotFoundEr
                           AiRateLimitError, AiUnavailableError, NotConfiguredError, SummaryError)
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def load_dotenv(path=None):
+    """이 폴더의 .env에서 KEY=값 줄을 읽어 환경 변수로 올린다. 이미 있는 환경 변수는 덮어쓰지 않는다.
+    저장소 맨 위의 .env(DB 정보)는 읽지 않는다. 읽은 파일이 있으면 True."""
+    path = path or os.environ.get("AI_ENV_FILE") or os.path.join(HERE, ".env")
+    try:
+        with open(path, encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+    except OSError:
+        return False
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+    return True
 
 
 def classify_exception(e):
@@ -24,6 +45,8 @@ def classify_exception(e):
 
 class GeminiClient:
     def __init__(self, api_key=None, model=None):
+        if not api_key and not os.environ.get("GEMINI_API_KEY"):
+            load_dotenv()
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise NotConfiguredError("GEMINI_API_KEY 환경 변수가 없습니다")

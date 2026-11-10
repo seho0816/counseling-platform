@@ -17,8 +17,10 @@
 **요청** `POST http://127.0.0.1:8001/api/ai/summary` (Content-Type: application/json; charset=utf-8)
 
 ```json
-{ "recordText": "상담사가 작성한 상담 기록 텍스트" }
+{ "recordText": "상담사가 작성한 상담 기록 텍스트", "maskTerms": ["내담자 이름"] }
 ```
+
+`maskTerms`는 **선택**이다. 기록에서 지울 이름 등(문자열 목록, 최대 50개, 각 100자 이하, 2글자 이상만 적용)을 알려 주면 AI에 보내기 전에 `[이름]`으로 바꾼다. 백엔드가 내담자 이름을 알고 있으면 꼭 넣는 것을 권한다.
 
 **성공 200**
 
@@ -46,7 +48,7 @@
 | HTTP | error | 뜻 | manualInput | 백엔드 처리 |
 | --- | --- | --- | --- | --- |
 | 400 | EMPTY_RECORD | 기록이 비었거나 공백뿐 (AI를 호출하지 않음) | false | 입력하라고 안내 |
-| 400 | INVALID_REQUEST | 요청 JSON이 틀림 (`recordText` 없음 등) | false | 백엔드 코드 확인 |
+| 400 | INVALID_REQUEST | 요청 JSON이 틀림 (`recordText` 없음, `maskTerms` 형식 오류 등) | false | 백엔드 코드 확인 |
 | 413 | RECORD_TOO_LONG | 기록이 너무 김 (기본 20000자) | false | 나눠서 요청 |
 | 429 | AI_RATE_LIMITED | AI 호출 한도 초과. `retryAfterSeconds`가 있으면 그만큼 기다림 | true | 잠시 뒤 다시 시도 안내 |
 | 502 | AI_UNAVAILABLE | AI 연결 실패 또는 서버 오류 (1회 재시도 후) | true | 재시도 버튼, 수동 입력 |
@@ -82,9 +84,10 @@
 | `AI_HOST` | 선택 | `127.0.0.1` | 서버 주소. 기본은 내 컴퓨터에서만 접속됨 |
 | `AI_PORT` | 선택 | `8001` | 서버 포트 (Spring은 8080) |
 | `AI_MAX_RECORD_CHARS` | 선택 | `20000` | 기록 최대 글자 수 |
+| `AI_ENV_FILE` | 선택 | `backend/ai/summary/.env` | 키를 적은 파일 위치를 바꿀 때 |
 | `AI_PROMPT_FILE` | 선택 | `prompts/summary_prompt_v5.txt` | 다른 프롬프트로 시험할 때 |
 
-**키는 환경 변수로만 넣는다.** `.env`에 적어도 되지만 GitHub에는 올리지 않는다(저장소 `.gitignore`가 `.env`를 막고, 이 폴더의 `.gitignore`도 막는다). 올려도 되는 건 값이 빈 `.env.example`뿐이다. 코드, 로그, 문서, 캡처에 키를 남기지 않는다.
+**키는 환경 변수로 넣거나, 이 폴더(`backend/ai/summary/`)의 `.env` 파일에 `GEMINI_API_KEY=키` 한 줄로 적으면 코드가 자동으로 읽는다.** 이미 설정된 환경 변수가 `.env`보다 우선한다. 저장소 맨 위의 `.env`(DB 접속 정보)는 읽지 않는다. `.env`는 GitHub에 올리지 않는다(저장소 `.gitignore`가 `.env`를 막고, 이 폴더의 `.gitignore`도 막는다). 올려도 되는 건 값이 빈 `.env.example`뿐이다. 코드, 로그, 문서, 캡처에 키를 남기지 않는다.
 
 ## 실행 방법
 
@@ -128,13 +131,35 @@ try {
 }
 ```
 
+## 개인정보 처리 범위
+
+| 정보 | 처리 |
+| --- | --- |
+| 전화번호, 이메일, 주민등록번호 | 자동으로 `[전화번호]` 등으로 바꾼 뒤 AI에 보낸다 |
+| 이름 | 자동으로 알아내지 못한다. 요청의 `maskTerms`로 알려 준 이름만 `[이름]`으로 바꾼다. **알려 주지 않으면 그대로 AI(외부 API)로 간다** |
+| 서버 로그 | 요청 줄(주소, 상태)만 남기고 기록 내용은 남기지 않는다 |
+| 오류 응답 | 고정된 문구만 쓴다 (AI 라이브러리의 예외 문구를 그대로 내보내지 않는다) |
+
+주소, 병명, 직장 이름 같은 정보는 자동으로 지우지 않는다. 시험에는 가상 데이터만 쓴다.
+
 ## 시험
 
 ```
-py -m unittest discover -s tests -v     # 키 없이 30개 (오류 처리, 서버, 검사 도구)
+py -m unittest discover -s tests -v     # 키 없이 38개 (오류 처리, 서버, 검사 도구)
 py tests/run_eval.py                    # 실제 LLM으로 가상 기록 18개 평가 (키 필요, 약 1분)
 py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LLM 결과가 아님)
+py tests/live_check.py                  # 서버를 직접 띄워 실제 Gemini로 전체 검증 (키 필요, 1~2분)
+py tests/live_check.py --fake           # 키 없이 검증 도구만 점검 (Gemini 검증이 아님)
 ```
+
+**시험 종류 구분**
+
+| 시험 | 실제 Gemini 호출 | 키 필요 |
+| --- | --- | --- |
+| `unittest` (38개) | 아니오 (가짜 클라이언트) | 아니오 |
+| `run_eval.py` (18개 입력) | 예 | 예 |
+| `live_check.py` | 예 (서버 전체, 이름 가리기, 반복 일관성, 키 오류) | 예 |
+| `--fake` 옵션 | 아니오 (도구 점검용) | 아니오 |
 
 `run_eval.py`는 `eval_output/`에 `eval_results_LLM.csv`(엑셀로 열림)와 `eval_report_LLM.md`를 만든다. 평가 입력은 `tests/eval_cases.json`이다.
 
@@ -147,3 +172,4 @@ py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LL
 - 이전 실측(프롬프트 v3, 기록 10건, 30칸)에서 정답과 일치 23칸이었다. 자세한 문제는 `tests/KNOWN_ISSUES.md`.
 - 프롬프트 v4로 실제 LLM 평가를 두 번 돌렸을 때 15개 중 1차는 통과 12(실패 C03, C09, C12), 2차는 통과 14(실패 C12)였다. **같은 입력이라도 결과가 달라질 수 있다.** C12(짧은 기록)는 두 번 다 호소 칸에 "사정 확인 중"을 넣어서 v5에서 "접수·사정 확인은 호소가 아니라 개입" 규칙과 예시를 추가했다. v5로 18개를 두 번 돌린 결과 **둘 다 통과 17, 실패 1(C09)**이었고, C12와 보완에 쓰지 않은 새 입력 C16~C18은 두 번 다 통과했다. 지어낸 사실은 없었다. 자세한 표는 `tests/results/evaluation_table.xlsx`, 원본 결과는 `tests/results/*.csv`.
 - 응답 시간은 보통 1~3초이지만 첫 호출이나 긴 기록에서 5초 이상(최대 23초)이 나온 적이 있다. 백엔드 응답 대기는 30초 이상을 권한다.
+- 서버 전체를 실제 Gemini로 검증한 결과(2026-11-10): 통과 20, 실패 0. 같은 기록 5번 반복에서 완전 일치 4/5, 긴 기록(5,707자)은 약 11초, `maskTerms` 없이는 이름이 그대로 AI로 간다. 호출 한도와 네트워크 오류는 단위 시험으로만 확인했다. 표는 `tests/KNOWN_ISSUES.md`, 원본은 `tests/results/live_check_2026-11-10_v5.*`.
