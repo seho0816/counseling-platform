@@ -26,11 +26,13 @@ import org.springframework.web.server.ResponseStatusException;
  * information as null. The note is never logged.
  *
  * <p>Settings (optional): ai.summary.url (default http://127.0.0.1:8001/api/ai/summary),
- * ai.summary.timeout-seconds (default 30).
+ * ai.summary.timeout-seconds (default 45).
  */
 @Component
 public class AiServiceSummaryGenerator implements SummaryGenerator {
     static final String NO_RECORD = "기록에 없음";
+    static final int MAX_TERMS = 50;        // the AI service accepts at most 50 terms
+    static final int MAX_TERM_LENGTH = 100; // and at most 100 characters per term
 
     private final HttpClient client;
     private final URI uri;
@@ -38,7 +40,7 @@ public class AiServiceSummaryGenerator implements SummaryGenerator {
 
     public AiServiceSummaryGenerator(
             @Value("${ai.summary.url:http://127.0.0.1:8001/api/ai/summary}") String url,
-            @Value("${ai.summary.timeout-seconds:30}") long timeoutSeconds) {
+            @Value("${ai.summary.timeout-seconds:45}") long timeoutSeconds) {
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
         this.uri = URI.create(url);
         this.timeout = Duration.ofSeconds(timeoutSeconds);
@@ -46,13 +48,21 @@ public class AiServiceSummaryGenerator implements SummaryGenerator {
 
     @Override
     public GeneratedSummary generate(String counselingNote) {
+        return generate(counselingNote, List.of());
+    }
+
+    /**
+     * Same as {@link #generate(String)}, and also tells the AI service which words (for example the
+     * client's name) to replace with "[이름]" before the note leaves this server. The AI service
+     * cannot find names by itself, so a caller that knows the name should pass it here.
+     */
+    public GeneratedSummary generate(String counselingNote, List<String> maskTerms) {
         HttpResponse<String> response;
         try {
             HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
                 .header("Content-Type", "application/json; charset=utf-8")
-                .POST(HttpRequest.BodyPublishers.ofString(
-                    "{\"recordText\":" + quote(counselingNote) + "}", StandardCharsets.UTF_8))
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody(counselingNote, maskTerms), StandardCharsets.UTF_8))
                 .build();
             response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         } catch (InterruptedException e) {
@@ -106,6 +116,27 @@ public class AiServiceSummaryGenerator implements SummaryGenerator {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    /** Builds {"recordText": "...", "maskTerms": [...]}; maskTerms is left out when there is nothing to mask. */
+    static String requestBody(String note, List<String> maskTerms) {
+        StringBuilder sb = new StringBuilder("{\"recordText\":").append(quote(note));
+        if (maskTerms != null && !maskTerms.isEmpty()) {
+            sb.append(",\"maskTerms\":[");
+            int count = 0;
+            for (String term : maskTerms) {
+                if (term == null || term.isBlank() || term.strip().length() > MAX_TERM_LENGTH || count >= MAX_TERMS) {
+                    continue;
+                }
+                if (count > 0) {
+                    sb.append(',');
+                }
+                sb.append(quote(term.strip()));
+                count++;
+            }
+            sb.append(']');
+        }
+        return sb.append('}').toString();
     }
 
     /** Escapes text as a JSON string literal. */

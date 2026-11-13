@@ -9,6 +9,8 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -118,6 +120,34 @@ class AiServiceSummaryGeneratorTest {
     @Test
     void mapsASlowServiceTo503() {
         assertStatus(503, "AI summary service is not reachable", base + "/slow", 1);
+    }
+
+    @Test
+    void sendsMaskTermsWhenGiven() {
+        new AiServiceSummaryGenerator(base + "/ok", 5).generate("김하늘 기록", List.of("김하늘", "", " 하늘 "));
+
+        assertEquals("{\"recordText\":\"김하늘 기록\",\"maskTerms\":[\"김하늘\",\"하늘\"]}", lastBody.get());
+    }
+
+    @Test
+    void leavesMaskTermsOutWhenNoneAreGiven() {
+        new AiServiceSummaryGenerator(base + "/ok", 5).generate("기록");
+
+        assertEquals("{\"recordText\":\"기록\"}", lastBody.get());
+    }
+
+    @Test
+    void keepsAtMost50TermsAndSkipsTermsOver100Characters() {
+        List<String> terms = new ArrayList<>();
+        terms.add("가".repeat(101));
+        for (int i = 0; i < 60; i++) {
+            terms.add("이름" + i);
+        }
+        new AiServiceSummaryGenerator(base + "/ok", 5).generate("기록", terms);
+
+        String body = lastBody.get();
+        assertEquals(50, body.split("이름", -1).length - 1);
+        assertEquals(false, body.contains("가".repeat(101)));
     }
 
     @Test
