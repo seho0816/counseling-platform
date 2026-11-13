@@ -62,8 +62,10 @@ def http(port, method, path, body=None, raw=None):
     req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), data=data, method=method,
                                  headers={"Content-Type": "application/json; charset=utf-8"})
     start = time.time()
+    # 내 컴퓨터(127.0.0.1)로 가는 호출은 프록시 환경 변수를 무시한다 (--extra가 일부러 넣는 가짜 프록시에 막히지 않게)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with urllib.request.urlopen(req, timeout=120) as r:
+        with opener.open(req, timeout=120) as r:
             status, text = r.status, r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         status, text = e.code, e.read().decode("utf-8")
