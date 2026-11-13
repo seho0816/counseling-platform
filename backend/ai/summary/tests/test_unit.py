@@ -239,6 +239,11 @@ class EvalToolTest(unittest.TestCase):
         self.assertIn("complaint", notes[0])
         self.assertEqual(run_eval.evaluate_case(case, {"complaint": "a", "intervention": "x", "nextPlan": "y"}, True)[0], "PASS")
 
+    def test_한_시간을_1시간으로_쓴_것은_지어낸_숫자로_보지_않는다(self):
+        case = {"record": "잠드는 데 한 시간 넘게 걸린다고 함", "expect": {}}
+        self.assertEqual(run_eval.evaluate_case(case, {"complaint": "1시간 넘게 걸림", "intervention": "x", "nextPlan": "y"}, True)[0], "PASS")
+        self.assertEqual(run_eval.evaluate_case(case, {"complaint": "3시간 넘게 걸림", "intervention": "x", "nextPlan": "y"}, True)[0], "WARN")
+
     def test_중요한_정보가_빠지면_실패(self):
         case = {"record": "기록", "expect": {"keep": [["약물", "처방"]]}}
         self.assertEqual(run_eval.evaluate_case(case, {"complaint": "불안", "intervention": "x", "nextPlan": "y"}, True)[0], "FAIL")

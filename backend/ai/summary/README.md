@@ -145,11 +145,11 @@ try {
 ## 시험
 
 ```
-py -m unittest discover -s tests -v     # 키 없이 42개 (오류 처리, 서버, 검사 도구)
-py tests/run_eval.py                    # 실제 LLM으로 가상 기록 26개 평가 (키 필요, 약 2분)
+py -m unittest discover -s tests -v     # 키 없이 43개 (오류 처리, 서버, 검사 도구)
+py tests/run_eval.py                    # 실제 LLM으로 가상 기록 27개 평가 (키 필요, 약 2분)
 py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LLM 결과가 아님)
 py tests/run_eval.py --tag v6           # 결과 파일 이름에 _v6을 붙임 (AI_PROMPT_FILE로 다른 프롬프트를 쓸 때)
-py tests/compare_prompts.py             # 프롬프트(v5 v6 v7)를 같은 입력으로 번갈아 3번씩 비교 (실제 Gemini, 10~15분)
+py tests/compare_prompts.py             # 프롬프트(v5 v7 v8)를 같은 입력으로 번갈아 3번씩 비교 (실제 Gemini, 10~15분)
 py tests/live_check.py                  # 서버를 직접 띄워 실제 Gemini로 전체 검증 (키 필요, 1~2분)
 py tests/live_check.py --fake           # 키 없이 검증 도구만 점검 (Gemini 검증이 아님)
 py tests/live_check.py --extra          # 네트워크 오류와 호출 한도(429)를 실제 호출 경로로 확인 (한도에 일부러 닿는다, 1~3분)
@@ -159,8 +159,8 @@ py tests/live_check.py --extra          # 네트워크 오류와 호출 한도(4
 
 | 시험 | 실제 Gemini 호출 | 키 필요 |
 | --- | --- | --- |
-| `unittest` (42개) | 아니오 (가짜 클라이언트) | 아니오 |
-| `run_eval.py` (26개 입력) | 예 | 예 |
+| `unittest` (43개) | 아니오 (가짜 클라이언트) | 아니오 |
+| `run_eval.py` (27개 입력) | 예 | 예 |
 | `live_check.py` | 예 (서버 전체, 이름 가리기, 반복 일관성, 키 오류, 전체 응답 저장) | 예 |
 | `compare_prompts.py` | 예 (프롬프트를 번갈아 호출해 품질과 응답 시간 비교) | 예 |
 | `live_check.py --extra` | 예 (연결 차단으로 만든 네트워크 오류, 연속 호출로 만난 429) | 예 |
@@ -177,4 +177,4 @@ py tests/live_check.py --extra          # 네트워크 오류와 호출 한도(4
 - 이전 실측(프롬프트 v3, 기록 10건, 30칸)에서 정답과 일치 23칸이었다. 자세한 문제는 `tests/KNOWN_ISSUES.md`.
 - 프롬프트 v4로 실제 LLM 평가를 두 번 돌렸을 때 15개 중 1차는 통과 12(실패 C03, C09, C12), 2차는 통과 14(실패 C12)였다. **같은 입력이라도 결과가 달라질 수 있다.** C12(짧은 기록)는 두 번 다 호소 칸에 "사정 확인 중"을 넣어서 v5에서 "접수·사정 확인은 호소가 아니라 개입" 규칙과 예시를 추가했다. v5로 18개를 두 번 돌린 결과 **둘 다 통과 17, 실패 1(C09)**이었고, C12와 보완에 쓰지 않은 새 입력 C16~C18은 두 번 다 통과했다. 지어낸 사실은 없었다. 자세한 표는 `tests/results/evaluation_table.xlsx`, 원본 결과는 `tests/results/*.csv`.
 - 응답 시간은 보통 1~3초이지만 첫 호출이나 긴 기록에서 5초 이상(최대 23초)이 나온 적이 있다. 백엔드 응답 대기는 45초 이상을 권한다. 한도(429) 뒤 재시도 대기는 최대 25초로 제한해 두었다.
-- 서버 전체를 실제 Gemini로 검증한 결과(2026-11-10): 통과 20, 실패 0. 같은 기록 5번 반복에서 완전 일치 4/5, 긴 기록(5,707자)은 약 11초, `maskTerms` 없이는 이름이 그대로 AI로 간다. 호출 한도와 네트워크 오류는 단위 시험으로만 확인했다. 표는 `tests/KNOWN_ISSUES.md`, 원본은 `tests/results/live_check_2026-11-10_v5.*`.
+- 서버 전체를 실제 Gemini로 검증한 결과(2026-11-10): 통과 20, 실패 0. 같은 기록 5번 반복에서 완전 일치 4/5, 긴 기록(5,707자)은 약 11초, `maskTerms` 없이는 이름이 그대로 AI로 간다. 호출 한도(429)와 네트워크 오류는 11/13에 `live_check.py --extra`로 실제 경로에서 확인했다(연결 차단으로 만든 네트워크 오류는 502 `AI_UNAVAILABLE`, 연달아 호출해 만난 실제 429는 `retryAfterSeconds`를 전달하고 기다린 뒤 회복). 표는 `tests/KNOWN_ISSUES.md`, 원본은 `tests/results/live_check_2026-11-10_v5.*`.

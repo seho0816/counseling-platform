@@ -70,7 +70,11 @@ def evaluate_case(case, result, llm_called):
         too_long = [f for f in FIELDS if len(result.get(f, "")) > exp["max_len"]]
         if too_long:
             warns.append("항목이 %d자를 넘음: %s" % (exp["max_len"], ",".join("%s(%d자)" % (f, len(result[f])) for f in too_long)))
-    extra = sorted(set(re.findall(r"\d+", joined)) - set(re.findall(r"\d+", case["record"])), key=int)
+    record_nums = set(re.findall(r"\d+", case["record"]))
+    for word, num in (("한", "1"), ("두", "2"), ("세", "3"), ("네", "4"), ("다섯", "5"), ("여섯", "6"), ("일곱", "7"), ("여덟", "8"), ("아홉", "9"), ("열", "10")):
+        if re.search(r"(?<![가-힣])%s (?=[가-힣])" % word, case["record"]):  # '한 시간' -> 1시간은 지어낸 숫자가 아니다
+            record_nums.add(num)
+    extra = sorted(set(re.findall(r"\d+", joined)) - record_nums, key=int)
     if extra:
         warns.append("기록에 없는 숫자 확인 필요: " + ",".join(extra))
     if problems:

@@ -4,7 +4,7 @@
 그래서 입력마다 프롬프트를 번갈아 부르고 이를 여러 번 반복한다.
 
 사용법 (backend/ai/summary 폴더에서)
-  python tests/compare_prompts.py                      # v5 v6 v7을 대표 12개 입력으로 3번씩 (약 10~15분)
+  python tests/compare_prompts.py                      # v5 v7 v8을 대표 13개 입력으로 3번씩 (약 10~15분)
   python tests/compare_prompts.py --prompts v5 v7 --repeat 2
   python tests/compare_prompts.py --cases all          # 모든 입력 (오래 걸린다)
   python tests/compare_prompts.py --fake               # 키 없이 도구만 점검 (실제 비교가 아니다)
@@ -27,12 +27,12 @@ from summary_core import FIELDS, SummaryError, SummaryService  # noqa: E402
 from llm_clients import FakeClient, GeminiClient, load_dotenv  # noqa: E402
 import run_eval  # noqa: E402
 
-DEFAULT_CASES = ["C01", "C03", "C06", "C09", "C11", "C12", "C19", "C20", "C21", "C22", "C25", "C26"]
+DEFAULT_CASES = ["C01", "C03", "C06", "C09", "C11", "C12", "C19", "C20", "C21", "C22", "C25", "C26", "C27"]
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--prompts", nargs="+", default=["v5", "v6", "v7"])
+    ap.add_argument("--prompts", nargs="+", default=["v5", "v7", "v8"])
     ap.add_argument("--repeat", type=int, default=3)
     ap.add_argument("--cases", default=",".join(DEFAULT_CASES))
     ap.add_argument("--delay", type=float, default=4.5)
