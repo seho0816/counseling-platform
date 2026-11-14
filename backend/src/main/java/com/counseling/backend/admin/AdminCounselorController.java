@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.List;
 
@@ -29,5 +31,16 @@ public class AdminCounselorController {
     @GetMapping
     public List<CounselorResponse> list(Authentication authentication) {
         return service.list(authentication);
+    }
+
+
+    @PatchMapping("/{counselorId}/status")
+    public CounselorResponse updateStatus(
+            @PathVariable Long counselorId,
+            @RequestBody UpdateCounselorStatusRequest request,
+            Authentication authentication) {
+
+        return service.updateStatus(
+            counselorId, request, authentication);
     }
 }

@@ -63,6 +63,9 @@ public class User {
     public String getName() { return name; }
     public UserRole getRole() { return role; }
     public boolean isActive() { return active; }
+    public void setActive(boolean active) {
+    this.active = active;
+    }
     public OffsetDateTime getCreatedAt() { return createdAt; }
 
     // Do not expose this Entity directly as a REST API response.
