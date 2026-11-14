@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -26,7 +27,8 @@ import org.springframework.web.server.ResponseStatusException;
  * information as null. The note is never logged.
  *
  * <p>Settings (optional): ai.summary.url (default http://127.0.0.1:8001/api/ai/summary),
- * ai.summary.timeout-seconds (default 45).
+ * ai.summary.timeout-seconds (default 45), ai.summary.token (default empty). When a token is set it is sent
+ * in the X-AI-Token header; the AI service checks it when AI_SHARED_TOKEN is set there.
  */
 @Component
 public class AiServiceSummaryGenerator implements SummaryGenerator {
@@ -37,13 +39,21 @@ public class AiServiceSummaryGenerator implements SummaryGenerator {
     private final HttpClient client;
     private final URI uri;
     private final Duration timeout;
+    private final String token;
 
+    public AiServiceSummaryGenerator(String url, long timeoutSeconds) {
+        this(url, timeoutSeconds, "");
+    }
+
+    @Autowired
     public AiServiceSummaryGenerator(
             @Value("${ai.summary.url:http://127.0.0.1:8001/api/ai/summary}") String url,
-            @Value("${ai.summary.timeout-seconds:45}") long timeoutSeconds) {
+            @Value("${ai.summary.timeout-seconds:45}") long timeoutSeconds,
+            @Value("${ai.summary.token:}") String token) {
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
         this.uri = URI.create(url);
         this.timeout = Duration.ofSeconds(timeoutSeconds);
+        this.token = token == null ? "" : token.strip();
     }
 
     @Override
@@ -59,9 +69,13 @@ public class AiServiceSummaryGenerator implements SummaryGenerator {
     public GeneratedSummary generate(String counselingNote, List<String> maskTerms) {
         HttpResponse<String> response;
         try {
-            HttpRequest request = HttpRequest.newBuilder(uri)
+            HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
-                .header("Content-Type", "application/json; charset=utf-8")
+                .header("Content-Type", "application/json; charset=utf-8");
+            if (!token.isEmpty()) {
+                builder.header("X-AI-Token", token);
+            }
+            HttpRequest request = builder
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody(counselingNote, maskTerms), StandardCharsets.UTF_8))
                 .build();
             response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));

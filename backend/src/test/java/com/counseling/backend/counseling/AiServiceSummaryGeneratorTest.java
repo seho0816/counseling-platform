@@ -25,6 +25,7 @@ class AiServiceSummaryGeneratorTest {
 
     private HttpServer server;
     private final AtomicReference<String> lastBody = new AtomicReference<>();
+    private final AtomicReference<String> lastToken = new AtomicReference<>();
     private String base;
 
     @BeforeEach
@@ -36,6 +37,7 @@ class AiServiceSummaryGeneratorTest {
         route("/long", 413, "{\"error\":\"RECORD_TOO_LONG\"}");
         route("/rate", 429, "{\"error\":\"AI_RATE_LIMITED\",\"retryAfterSeconds\":9}");
         route("/down", 502, "{\"error\":\"AI_UNAVAILABLE\",\"manualInput\":true}");
+        route("/unauth", 401, "{\"error\":\"UNAUTHORIZED\",\"manualInput\":true}");
         route("/garbage", 200, "<html>nope</html>");
         route("/missing", 200, "{\"complaint\":\"a\",\"intervention\":\"b\",\"model\":\"m\"}");
         route("/nomodel", 200, "{\"complaint\":\"a\",\"intervention\":\"b\",\"nextPlan\":\"c\"}");
@@ -151,6 +153,27 @@ class AiServiceSummaryGeneratorTest {
     }
 
     @Test
+    void sendsTheTokenHeaderWhenOneIsConfigured() {
+        new AiServiceSummaryGenerator(base + "/ok", 5, " secret-token ").generate("기록");
+
+        assertEquals("secret-token", lastToken.get());
+    }
+
+    @Test
+    void sendsNoTokenHeaderWhenNoneIsConfigured() {
+        new AiServiceSummaryGenerator(base + "/ok", 5).generate("기록");
+        assertNull(lastToken.get());
+
+        new AiServiceSummaryGenerator(base + "/ok", 5, "").generate("기록");
+        assertNull(lastToken.get());
+    }
+
+    @Test
+    void mapsAWrongTokenAnswerTo502() {
+        assertStatus(502, "AI summary failed: UNAUTHORIZED", base + "/unauth", 5);
+    }
+
+    @Test
     void escapesControlCharacters() {
         assertEquals("\"a\\u0001b\"", AiServiceSummaryGenerator.quote("a\u0001b"));
     }
@@ -168,6 +191,7 @@ class AiServiceSummaryGeneratorTest {
 
     private void reply(HttpExchange exchange, int status, String body) throws IOException {
         lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+        lastToken.set(exchange.getRequestHeaders().getFirst("X-AI-Token"));
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(status, bytes.length);
