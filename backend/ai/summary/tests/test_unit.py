@@ -351,6 +351,54 @@ class ServerTest(unittest.TestCase):
             self.assertEqual((status, body["error"]), (400, "INVALID_REQUEST"))
         self.assertEqual(len(c.calls), 0)
 
+    def _post_with_header(self, port, body, headers):
+        import urllib.request
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request("http://127.0.0.1:%d/api/ai/summary" % port, data=data, method="POST",
+                                     headers=dict({"Content-Type": "application/json; charset=utf-8"}, **headers))
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read().decode("utf-8"))
+
+    def _start_with_token(self, s, token):
+        server = make_server(lambda: s, "127.0.0.1", 0, token)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return server.server_address[1]
+
+    def test_토큰을_정하면_맞는_헤더가_있어야_요약한다(self):
+        s, c = service(GOOD)
+        port = self._start_with_token(s, "secret-token")
+        status, body = self._post_with_header(port, {"recordText": "기록"}, {})
+        self.assertEqual((status, body["error"]), (401, "UNAUTHORIZED"))
+        status, body = self._post_with_header(port, {"recordText": "기록"}, {"X-AI-Token": "wrong"})
+        self.assertEqual((status, body["error"]), (401, "UNAUTHORIZED"))
+        self.assertEqual(len(c.calls), 0)  # 토큰이 틀리면 Gemini를 부르지 않는다
+        status, body = self._post_with_header(port, {"recordText": "기록"}, {"X-AI-Token": "secret-token"})
+        self.assertEqual(status, 200)
+        self.assertEqual(len(c.calls), 1)
+
+    def test_토큰을_정해도_health는_열려_있고_토큰을_정하지_않으면_예전처럼_된다(self):
+        import urllib.request
+        s, _ = service(GOOD)
+        port = self._start_with_token(s, "secret-token")
+        with urllib.request.urlopen("http://127.0.0.1:%d/health" % port, timeout=5) as r:
+            self.assertEqual(r.status, 200)
+        s2, _ = service(GOOD)
+        port2 = self._start_with_token(s2, None)
+        status, _ = self._post_with_header(port2, {"recordText": "기록"}, {})
+        self.assertEqual(status, 200)
+
+    def test_토큰_오류_응답에_토큰이_나오지_않는다(self):
+        s, _ = service(GOOD)
+        port = self._start_with_token(s, "secret-token")
+        status, body = self._post_with_header(port, {"recordText": "기록"}, {"X-AI-Token": "secret-token-wrong"})
+        self.assertEqual(status, 401)
+        self.assertNotIn("secret-token", json.dumps(body, ensure_ascii=False))
+
     def test_없는_주소는_404(self):
         s, _ = service(GOOD)
         self.assertEqual(self.post(self.start(s), {}, path="/nope")[0], 404)

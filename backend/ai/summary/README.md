@@ -84,6 +84,8 @@
 | `AI_HOST` | 선택 | `127.0.0.1` | 서버 주소. 기본은 내 컴퓨터에서만 접속됨 |
 | `AI_PORT` | 선택 | `8001` | 서버 포트 (Spring은 8080) |
 | `AI_MAX_RECORD_CHARS` | 선택 | `20000` | 기록 최대 글자 수 |
+| `AI_SHARED_TOKEN` | 선택(밖에 열 때는 필수) | 없음 | 정하면 `POST /api/ai/summary` 요청에 같은 값의 `X-AI-Token` 헤더가 있어야 한다. 없거나 틀리면 401 `UNAUTHORIZED`이고 Gemini를 부르지 않는다. `/health`는 열려 있다 |
+| `PORT` | 선택 | 없음 | `AI_PORT`가 없을 때 호스팅이 주는 포트를 쓴다(예: Render) |
 | `AI_ENV_FILE` | 선택 | `backend/ai/summary/.env` | 키를 적은 파일 위치를 바꿀 때 |
 | `AI_TIMEOUT_SECONDS` | 선택 | `20` | Gemini 한 번 호출의 제한 시간(초). 넘으면 502 `AI_UNAVAILABLE`로 처리하고 1번 다시 시도한다 |
 | `AI_DEBUG_ERRORS` | 선택(시험용) | 꺼짐 | `1`로 두면 오류 응답에 `detail`(예외 종류와 상태 코드만)을 넣는다. 기록 내용은 넣지 않는다. `live_check.py --extra`가 켠다 |
@@ -133,6 +135,20 @@ try {
 }
 ```
 
+## 배포 (AI 서버를 따로 올릴 때)
+
+배포된 백엔드(Render)에서 요약 생성이 되려면 이 AI 서버가 어딘가에 켜져 있어야 한다. 백엔드의 연결 클래스는 기본값 `http://127.0.0.1:8001`을 부르는데, 배포된 컨테이너 안에는 AI 서버가 없어서 그대로 두면 503이 난다.
+
+1. **AI 서버를 별도 서비스로 올린다.** `backend/ai/summary/`에 `Dockerfile`이 있다. 로컬 확인은 `docker build -t ai-summary backend/ai/summary`, Render에서는 Root Directory를 `backend/ai/summary`, 런타임을 Docker로 한다.
+2. **AI 서비스의 환경변수**: `GEMINI_API_KEY`(필수), `AI_SHARED_TOKEN`(길고 추측하기 어려운 값, 필수로 권한다). 포트는 호스팅이 주는 `PORT`를 읽는다.
+3. **백엔드 서비스의 환경변수**: `AI_SUMMARY_URL=https://AI서비스주소/api/ai/summary`, `AI_SUMMARY_TOKEN=위와 같은 토큰`(연결 클래스의 `ai.summary.url`, `ai.summary.token` 설정이다).
+4. **확인**: AI 서비스 주소의 `/health`가 `OK`, 토큰 없이 `POST`하면 401이 와야 한다.
+
+주의:
+- 이 서버는 로그인이 없다. `AI_SHARED_TOKEN` 없이 공개 주소로 올리면 누구나 Gemini 키 한도를 쓰고 기록을 보낼 수 있다. 토큰은 저장소에 올리지 않는다.
+- `Dockerfile`은 만들었지만 Docker로 빌드해 보지는 못했다. 토큰 확인과 `PORT` 읽기는 서버를 직접 실행해 확인했다.
+- 무료 호스팅은 한동안 쓰지 않으면 잠들어 첫 요청이 느릴 수 있다(제 지식 기준이며 확인하지 않았다). 연결 클래스의 기본 대기는 45초이다.
+
 ## 개인정보 처리 범위
 
 | 정보 | 처리 |
@@ -147,7 +163,7 @@ try {
 ## 시험
 
 ```
-py -m unittest discover -s tests -v     # 키 없이 45개 (오류 처리, 서버, 검사 도구)
+py -m unittest discover -s tests -v     # 키 없이 48개 (오류 처리, 서버, 검사 도구)
 py tests/run_eval.py                    # 실제 LLM으로 가상 기록 27개 평가 (키 필요, 약 2분)
 py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LLM 결과가 아님)
 py tests/run_eval.py --tag v6           # 결과 파일 이름에 _v6을 붙임 (AI_PROMPT_FILE로 다른 프롬프트를 쓸 때)
@@ -161,7 +177,7 @@ py tests/live_check.py --extra          # 네트워크 오류, 시간 초과, �
 
 | 시험 | 실제 Gemini 호출 | 키 필요 |
 | --- | --- | --- |
-| `unittest` (45개) | 아니오 (가짜 클라이언트) | 아니오 |
+| `unittest` (48개) | 아니오 (가짜 클라이언트) | 아니오 |
 | `run_eval.py` (27개 입력) | 예 | 예 |
 | `live_check.py` | 예 (서버 전체, 이름 가리기, 반복 일관성, 키 오류, 전체 응답 저장) | 예 |
 | `compare_prompts.py` | 예 (프롬프트를 번갈아 호출해 품질과 응답 시간 비교) | 예 |
