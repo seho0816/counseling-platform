@@ -6,6 +6,7 @@ from summary_core import (AiAuthError, AiInvalidResponseError, AiModelNotFoundEr
                           AiRateLimitError, AiUnavailableError, NotConfiguredError, SummaryError)
 
 DEFAULT_MODEL = "gemini-3.5-flash-lite"
+DEFAULT_TIMEOUT_SECONDS = 20  # Gemini 한 번 호출의 제한 시간. 정상 호출은 대부분 15초 안에 끝난다
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -31,6 +32,13 @@ def load_dotenv(path=None):
 
 def classify_exception(e):
     """라이브러리 예외를 우리 오류로 바꾼다 (메시지 문구로 구분)."""
+    err = _classify(e)
+    # 진단용: 예외 종류와 상태 코드만 남긴다. 예외 문구에는 기록 내용이 섞일 수 있어 넣지 않는다
+    err.detail = "%s code=%s status=%s" % (type(e).__name__, getattr(e, "code", None), getattr(e, "status", None))
+    return err
+
+
+def _classify(e):
     msg = str(e)
     low = msg.lower()
     if "429" in msg or "resource_exhausted" in low or "quota" in low:
@@ -44,7 +52,7 @@ def classify_exception(e):
 
 
 class GeminiClient:
-    def __init__(self, api_key=None, model=None):
+    def __init__(self, api_key=None, model=None, timeout_seconds=None):
         if not api_key and not os.environ.get("GEMINI_API_KEY"):
             load_dotenv()
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
@@ -55,7 +63,15 @@ class GeminiClient:
             from google import genai
         except ImportError:
             raise NotConfiguredError("google-genai가 설치되어 있지 않습니다: pip install google-genai")
-        self._client = genai.Client(api_key=self.api_key)
+        self.timeout_seconds = float(timeout_seconds if timeout_seconds is not None
+                                     else os.environ.get("AI_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS))
+        try:
+            from google.genai import types
+            options = types.HttpOptions(timeout=int(self.timeout_seconds * 1000))  # 밀리초
+            self._client = genai.Client(api_key=self.api_key, http_options=options)
+        except (ImportError, AttributeError, TypeError):
+            # 라이브러리가 시간 제한 옵션을 받지 못하면 제한 없이 만든다. live_check --extra의 시간 초과 시험이 이를 잡아낸다
+            self._client = genai.Client(api_key=self.api_key)
 
     def generate(self, system, user):
         try:

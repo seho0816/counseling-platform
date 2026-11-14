@@ -12,7 +12,7 @@ FIELDS = ("complaint", "intervention", "nextPlan")
 NO_RECORD = "기록에 없음"
 DEFAULT_MAX_CHARS = 20000
 HERE = os.path.dirname(os.path.abspath(__file__))
-DEFAULT_PROMPT_FILE = "summary_prompt_v5.txt"
+DEFAULT_PROMPT_FILE = "summary_prompt_v8.txt"
 MAX_RETRY_WAIT = 25  # 호출 한도(429) 뒤 기다리는 시간의 상한(초). 백엔드 대기 시간 안에 끝내려고 둔다
 
 
@@ -43,9 +43,12 @@ class SummaryError(Exception):
         super().__init__(message or self.code)
         self.message = message or self.code
         self.retry_after = retry_after
+        self.detail = None  # 예외 종류와 상태 코드만 (기록 내용은 넣지 않는다)
 
     def to_dict(self):
         d = {"error": self.code, "message": self.message, "manualInput": self.manual_input}
+        if self.detail and os.environ.get("AI_DEBUG_ERRORS") == "1":  # 시험할 때만 켠다
+            d["detail"] = self.detail
         if self.retry_after is not None:
             d["retryAfterSeconds"] = int(round(self.retry_after))
         return d

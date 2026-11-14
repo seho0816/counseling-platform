@@ -119,6 +119,40 @@ class SummaryServiceTest(unittest.TestCase):
                 self.assertEqual(os.environ["GEMINI_MODEL"], "keep")
                 self.assertNotIn("EMPTY", os.environ)
 
+    def test_기본_제한_시간은_20초이고_환경_변수로_바꿀_수_있다(self):
+        import llm_clients
+        self.assertEqual(llm_clients.DEFAULT_TIMEOUT_SECONDS, 20)
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k", "AI_TIMEOUT_SECONDS": "7"}, clear=True):
+            try:
+                c = GeminiClient()
+            except NotConfiguredError:
+                return  # google-genai가 없는 환경이면 설정값 읽기까지만 확인
+            self.assertEqual(c.timeout_seconds, 7.0)
+        with mock.patch.dict(os.environ, {"GEMINI_API_KEY": "k"}, clear=True):
+            try:
+                c = GeminiClient(timeout_seconds=3)
+            except NotConfiguredError:
+                return
+            self.assertEqual(c.timeout_seconds, 3.0)
+
+    def test_오류에_진단_정보는_시험할_때만_들어가고_기록_내용은_없다(self):
+        import llm_clients
+
+        class Boom(Exception):
+            code = 503
+            status = "UNAVAILABLE"
+
+        err = llm_clients.classify_exception(Boom("요청 본문: 김하늘 기록"))
+        self.assertEqual(err.code, "AI_UNAVAILABLE")
+        self.assertIn("Boom code=503 status=UNAVAILABLE", err.detail)
+        self.assertNotIn("김하늘", err.detail)
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("AI_DEBUG_ERRORS", None)
+            self.assertNotIn("detail", err.to_dict())
+            os.environ["AI_DEBUG_ERRORS"] = "1"
+            self.assertIn("detail", err.to_dict())
+            self.assertNotIn("김하늘", str(err.to_dict()))
+
     def test_env_파일이_없으면_조용히_넘어간다(self):
         self.assertFalse(load_dotenv(os.path.join(HERE, "no_such.env")))
 
@@ -175,7 +209,7 @@ class SummaryServiceTest(unittest.TestCase):
         base = os.path.join(HERE, "..", "prompts")
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop("AI_PROMPT_FILE", None)
-            self.assertEqual(core.prompt_version(), "v5")
+            self.assertEqual(core.prompt_version(), "v8")
             os.environ["AI_PROMPT_FILE"] = os.path.join(base, "summary_prompt_v6.txt")
             self.assertEqual(core.prompt_version(), "v6")
             os.environ["AI_PROMPT_FILE"] = "other.txt"

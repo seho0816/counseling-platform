@@ -3,7 +3,7 @@
 사용법 (backend/ai/summary 폴더에서)
   python tests/live_check.py          # 실제 Gemini 호출 (키 필요: GEMINI_API_KEY 또는 이 폴더의 .env), 약 1~2분
   python tests/live_check.py --fake   # 키 없이 도구만 점검 (가짜 응답이므로 Gemini 검증이 아니다)
-  python tests/live_check.py --extra   # 네트워크 오류와 호출 한도(429)를 실제 호출 경로로 확인 (1~3분, 한도에 일부러 닿는다)
+  python tests/live_check.py --extra   # 네트워크 오류, 시간 초과, 호출 한도(429)를 실제 호출 경로로 확인 (1~3분, 한도에 일부러 닿는다)
 결과: eval_output/live_check_report.md, live_check_results.csv
 무료 한도(분당 15회) 때문에 Gemini 호출 사이에 4.5초 쉰다 (--delay로 조절).
 """
@@ -57,6 +57,9 @@ class ScriptedFake:
         return json.dumps({"complaint": "잠을 잘 못 잔다고 함.", "intervention": inter, "nextPlan": plan}, ensure_ascii=False)
 
 
+WAIT_SECONDS = 90  # 도구가 서버의 응답을 기다리는 최대 시간(초)
+
+
 def http(port, method, path, body=None, raw=None):
     data = raw if raw is not None else (None if body is None else json.dumps(body, ensure_ascii=False).encode("utf-8"))
     req = urllib.request.Request("http://127.0.0.1:%d%s" % (port, path), data=data, method=method,
@@ -65,10 +68,13 @@ def http(port, method, path, body=None, raw=None):
     # 내 컴퓨터(127.0.0.1)로 가는 호출은 프록시 환경 변수를 무시한다 (--extra가 일부러 넣는 가짜 프록시에 막히지 않게)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with opener.open(req, timeout=120) as r:
+        with opener.open(req, timeout=WAIT_SECONDS) as r:
             status, text = r.status, r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         status, text = e.code, e.read().decode("utf-8")
+    except (TimeoutError, urllib.error.URLError):
+        # 서버가 WAIT_SECONDS 안에 답하지 않았다. 도구가 죽지 않게 상태 0으로 돌려주고 판정에서 실패로 본다
+        status, text = 0, json.dumps({"error": "NO_RESPONSE_IN_%dS" % WAIT_SECONDS})
     try:
         payload = json.loads(text)
     except ValueError:
@@ -92,72 +98,104 @@ FIELDS = ("complaint", "intervention", "nextPlan")
 
 
 def run_extra(args, fake):
-    """네트워크 오류와 호출 한도(429)를 실제 라이브러리 경로로 확인한다."""
+    """네트워크 오류, 시간 초과, 호출 한도(429)를 실제 라이브러리 경로로 확인한다. 한 단계가 실패해도 다음 단계로 간다."""
     rows = []
+    os.environ["AI_DEBUG_ERRORS"] = "1"  # 이 시험에서만: 오류 응답에 예외 종류와 상태 코드를 넣는다
 
     def add(item, expected, actual, ok, note=""):
         verdict = "통과" if ok is True else ("실패" if ok is False else str(ok))
         rows.append((item, expected, actual, verdict, note))
         say("[%s] %s %s" % (verdict, item, note))
 
-    # 1) 네트워크 오류: 존재하지 않는 프록시로 연결을 막아 실제 라이브러리의 연결 실패를 만든다
-    proxy_keys = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
-    saved = {k: os.environ.get(k) for k in proxy_keys}
-    try:
-        if fake:
-            client = FakeClient(AiUnavailableError("fake"))
-        else:
-            for k in proxy_keys:
-                os.environ[k] = "http://127.0.0.1:9"
-            client = GeminiClient()
+    def guard(label, fn):
+        say("[진행] %s ..." % label)
+        started = time.time()
+        try:
+            fn()
+        except Exception as e:  # noqa: BLE001  도구가 한 단계에서 멈추지 않게 한다
+            add(label, "시험이 끝까지 실행됨", "예외 %s (%.0f초)" % (type(e).__name__, time.time() - started), False, str(e)[:120])
+
+    quiet = lambda: contextlib.redirect_stdout(io.StringIO())  # noqa: E731
+    sample = {"recordText": "내담자는 최근 잠을 잘 못 잔다고 하였다."}
+
+    def network_test():
+        # 존재하지 않는 프록시로 연결을 막아 실제 라이브러리의 연결 실패를 만든다
+        proxy_keys = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")
+        saved = {k: os.environ.get(k) for k in proxy_keys}
+        try:
+            if fake:
+                client = FakeClient(AiUnavailableError("fake"))
+            else:
+                for k in proxy_keys:
+                    os.environ[k] = "http://127.0.0.1:9"
+                client = GeminiClient()
+            server, port = start_server(SummaryService(client, max_retries=0, sleep=lambda s: None))
+            with quiet():
+                st, p, sec = http(port, "POST", "/api/ai/summary", sample)
+            server.shutdown()
+            server.server_close()
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        add("네트워크 오류(연결 차단)", "502 AI_UNAVAILABLE, manualInput true", "%s %s %s (%.1f초)" % (st, p.get("error"), p.get("manualInput"), sec),
+            st == 502 and p.get("error") == "AI_UNAVAILABLE" and p.get("manualInput") is True, "프록시를 막아 실제 연결 실패를 만듦" if not fake else "가짜 응답")
+
+    def timeout_test():
+        # 제한 시간을 0.05초로 줄여 반드시 시간 초과가 나게 한다. 제한이 적용되지 않으면 200이 나와 실패로 보인다
+        client = FakeClient(AiUnavailableError("timeout")) if fake else GeminiClient(timeout_seconds=0.05)
         server, port = start_server(SummaryService(client, max_retries=0, sleep=lambda s: None))
-        with contextlib.redirect_stdout(io.StringIO()):
-            st, p, sec = http(port, "POST", "/api/ai/summary", {"recordText": "내담자는 최근 잠을 잘 못 잔다고 하였다."})
+        with quiet():
+            st, p, sec = http(port, "POST", "/api/ai/summary", sample)
         server.shutdown()
         server.server_close()
-    finally:
-        for k, v in saved.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
-    add("네트워크 오류(연결 차단)", "502 AI_UNAVAILABLE, manualInput true", "%s %s %s (%.1f초)" % (st, p.get("error"), p.get("manualInput"), sec),
-        st == 502 and p.get("error") == "AI_UNAVAILABLE" and p.get("manualInput") is True, "프록시를 막아 실제 연결 실패를 만듦" if not fake else "가짜 응답")
+        add("시간 초과(제한 0.05초)", "502 AI_UNAVAILABLE, manualInput true, 5초 안에 끝남", "%s %s %s (%.1f초)" % (st, p.get("error"), p.get("manualInput"), sec),
+            st == 502 and p.get("error") == "AI_UNAVAILABLE" and p.get("manualInput") is True and sec < 5,
+            "제한 시간 옵션이 실제로 적용되는지 확인" if not fake else "가짜 응답")
 
-    # 2) 호출 한도: 짧은 요청을 연달아 보내 429를 만나고, 기다린 뒤 회복되는지 본다
-    if fake:
-        client = FakeClient("{\"complaint\":\"a\",\"intervention\":\"b\",\"nextPlan\":\"c\"}", AiRateLimitError("q", retry_after=1),
-                            "{\"complaint\":\"a\",\"intervention\":\"b\",\"nextPlan\":\"c\"}")
-    else:
-        client = GeminiClient()
-    server, port = start_server(SummaryService(client, max_retries=0, sleep=lambda s: None))
-    hit = None
-    with contextlib.redirect_stdout(io.StringIO()):
-        for i in range(1, 31):
-            st, p, sec = http(port, "POST", "/api/ai/summary", {"recordText": "내담자는 최근 잠을 잘 못 잔다고 하였다."})
-            if st == 429:
-                hit = (i, p)
-                break
-            if st != 200:
-                hit = (i, p)
-                break
-    if hit and hit[1].get("error") == "AI_RATE_LIMITED":
-        wait = int(hit[1].get("retryAfterSeconds") or 60)
-        add("호출 한도(429)", "429 AI_RATE_LIMITED, manualInput true", "%d번째 호출에서 429, 대기 %d초" % (hit[0], wait),
-            st == 429 and hit[1].get("manualInput") is True, "retryAfterSeconds=%s" % hit[1].get("retryAfterSeconds"))
-        time.sleep(0 if fake else wait + 3)
-        with contextlib.redirect_stdout(io.StringIO()):
-            st2, p2, _ = http(port, "POST", "/api/ai/summary", {"recordText": "내담자는 최근 잠을 잘 못 잔다고 하였다."})
-        add("한도 뒤 회복", "기다린 뒤 200", "%s" % st2, st2 == 200, "대기 후 다시 호출")
-    elif hit:
-        add("호출 한도(429)", "429 AI_RATE_LIMITED", "%d번째에서 %s %s" % (hit[0], st, hit[1].get("error")), False, "한도가 아닌 다른 오류")
-    else:
-        add("호출 한도(429)", "30번 안에 429", "30번 모두 성공", "한도에 닿지 않음", "무료 한도가 더 크거나 요금제가 다름")
-    server.shutdown()
-    server.server_close()
+    def rate_test():
+        # 짧은 요청을 연달아 보내 429를 만나고, 기다린 뒤 회복되는지 본다. 429가 아닌 오류는 기록하고 계속 시도한다
+        ok_json = "{\"complaint\":\"a\",\"intervention\":\"b\",\"nextPlan\":\"c\"}"
+        client = FakeClient(ok_json, AiUnavailableError("x"), AiRateLimitError("q", retry_after=1), ok_json) if fake else GeminiClient()
+        server, port = start_server(SummaryService(client, max_retries=0, sleep=lambda s: None))
+        try:
+            seq, got_429 = [], None
+            with quiet():
+                for i in range(1, 31):
+                    st, p, sec = http(port, "POST", "/api/ai/summary", sample)
+                    seq.append((i, st, p, sec))
+                    if st == 429 or st == 0:
+                        got_429 = (i, st, p) if st == 429 else None
+                        break
+            others = ["%d번째 %s %s %s" % (i, st, p.get("error"), ("[" + p["detail"] + "]") if p.get("detail") else "")
+                      for i, st, p, sec in seq if st != 200]
+            note_others = ("; 그 밖의 응답: " + "; ".join(others)) if others else ""
+            if got_429:
+                i, st, p = got_429
+                wait = int(p.get("retryAfterSeconds") or 60)
+                add("호출 한도(429)", "429 AI_RATE_LIMITED, manualInput true", "%d번째 호출에서 429, 대기 %d초" % (i, wait),
+                    p.get("manualInput") is True, "retryAfterSeconds=%s%s" % (p.get("retryAfterSeconds"), note_others))
+                time.sleep(0 if fake else wait + 3)
+                with quiet():
+                    st2, p2, _ = http(port, "POST", "/api/ai/summary", sample)
+                add("한도 뒤 회복", "기다린 뒤 200", "%s" % st2, st2 == 200, "대기 후 다시 호출")
+            elif seq and seq[-1][1] == 0:
+                add("호출 한도(429)", "429 AI_RATE_LIMITED", "%d번째에서 서버 응답 없음%s" % (seq[-1][0], note_others), False, "서버가 응답하지 않음")
+            else:
+                add("호출 한도(429)", "30번 안에 429", "%d번 호출, 429 없음%s" % (len(seq), note_others),
+                    "확인 못 함", "한도에 닿지 않았거나 다른 오류(AI_UNAVAILABLE 등)가 먼저 나옴. 한도 시험으로는 인정하지 않는다")
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    guard("1) 네트워크 오류 시험", network_test)
+    guard("2) 시간 초과 시험", timeout_test)
+    guard("3) 호출 한도(429) 시험", rate_test)
 
     os.makedirs(args.out, exist_ok=True)
-    lines = ["# AI 요약 서버 추가 검증 (네트워크 오류, 호출 한도)", "",
+    lines = ["# AI 요약 서버 추가 검증 (네트워크 오류, 시간 초과, 호출 한도)", "",
              "- 실행: %s, 프롬프트: %s" % (datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), PROMPT_VERSION)]
     if fake:
         lines.append("- **가짜 응답으로 도구만 점검한 결과이며 실제 검증이 아니다.**")
