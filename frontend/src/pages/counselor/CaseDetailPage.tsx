@@ -4,9 +4,10 @@ import { ApiError, describeApiError } from '../../api/http';
 import { assignCase, counselorLabel, fetchCounselors } from '../../api/remoteAdminApi';
 import { caseFromApi, fetchCase } from '../../api/remoteCaseApi';
 import { useAuth } from '../../auth/AuthContext';
+import CaseSessionsPanel from '../../components/CaseSessionsPanel';
+import CaseStatusPanel from '../../components/CaseStatusPanel';
 import ConfirmInline from '../../components/ConfirmInline';
 import PageHead from '../../components/PageHead';
-import Placeholder from '../../components/Placeholder';
 import StateMessage from '../../components/StateMessage';
 import StatusBadge from '../../components/StatusBadge';
 import type { ApiCounselorAccount, CaseRow } from '../../types';
@@ -31,9 +32,10 @@ export default function CaseDetailPage() {
   const [error, setError] = useState<{ message: string; notFound: boolean } | null>(null);
   const [loading, setLoading] = useState(validId);
   const [reloadKey, setReloadKey] = useState(0);
-  const [notice, setNotice] = useState(
-    (location.state as { created?: boolean } | null)?.created ? '사례를 등록했어요.' : '',
-  );
+  const [notice, setNotice] = useState(() => {
+    const state = location.state as { created?: boolean; notice?: string } | null;
+    return state?.notice ?? (state?.created ? '사례를 등록했어요.' : '');
+  });
 
   // 관리자 전용: 상담사 목록과 배정 선택
   const [counselors, setCounselors] = useState<ApiCounselorAccount[]>([]);
@@ -291,13 +293,26 @@ export default function CaseDetailPage() {
         </section>
       ) : null}
 
-      <section className="section" aria-label="회기 기록과 AI 요약">
-        <Placeholder
-          title="회기 기록과 AI 요약"
-          summary="서버에 회기·요약 API가 만들어지면 이 자리에 연결해요."
-          items={['회기 이력과 상담 기록', 'AI 요약 초안 검토·수정·확정', '사례 상태 변경']}
-          requirementIds={['F-01-2', 'F-02', 'F-03']}
+      <section className="section" aria-labelledby="status-heading">
+        <h2 id="status-heading">진행 상태</h2>
+        <CaseStatusPanel
+          item={item}
+          onChanged={(updated, message) => {
+            setItem(updated);
+            setNotice(message);
+          }}
         />
+      </section>
+
+      <section className="section" aria-label="상담 회기">
+        {isAdmin ? (
+          <div className="stack">
+            <h2>상담 회기</h2>
+            <p className="field__hint">상담 기록과 AI 요약은 담당 상담사의 화면에서 쓰고 확인해요.</p>
+          </div>
+        ) : (
+          <CaseSessionsPanel item={item} casePath={`/counselor/cases/${item.id}`} canWrite />
+        )}
       </section>
     </>
   );

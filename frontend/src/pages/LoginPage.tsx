@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { HOME_PATH } from '../auth/paths';
 import { checkServer } from '../api/healthApi';
@@ -205,6 +205,10 @@ export default function LoginPage() {
               ) : null}
             </form>
           )}
+
+          <p className="field__hint">
+            상담을 받고 싶으신가요? 로그인 없이 <Link to="/apply">상담 신청</Link>을 할 수 있어요.
+          </p>
 
           <p className="field__hint" role="status">
             서버 상태:{' '}

@@ -1,73 +1,66 @@
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { getCase, updateRecord } from '../../api/caseApi';
-import { ForbiddenError } from '../../api/caseGuard';
+import { useEffect, useState, type FormEvent } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { ApiError, describeApiError, serverDetail } from '../../api/http';
+import { fetchCase } from '../../api/remoteCaseApi';
 import {
-  confirmSummary,
-  createManualDraft,
-  generateSummary,
-  getSessionDetail,
-  saveDraft,
-} from '../../api/summaryApi';
-import { useAuth } from '../../auth/AuthContext';
-import HighlightedText from '../../components/HighlightedText';
+  SESSION_CONTENT_MAX,
+  describeSessionError,
+  fetchSession,
+  updateSession,
+  validateSessionInput,
+} from '../../api/remoteSessionApi';
+import AiSummaryPanel from '../../components/AiSummaryPanel';
 import PageHead from '../../components/PageHead';
 import StateMessage from '../../components/StateMessage';
-import SummaryPanel, { type SummaryPhase } from '../../components/SummaryPanel';
-import { SESSION_METHOD_LABEL } from '../../constants/fields';
-import type { CounselingCase, Session, SessionSummary, SummaryFields, SummaryKey } from '../../types';
+import type { ApiSession, CaseRow } from '../../types';
+import { formatDateOnly } from '../../utils/format';
 import { formatDateTime } from '../../utils/schedule';
 
-type Load =
-  | { kind: 'loading' }
-  | { kind: 'blocked'; message: string }
-  | { kind: 'error' }
-  | { kind: 'ready' };
-
 /**
- * 회기 화면: 왼쪽에 상담 기록, 오른쪽에 AI 요약.
- * 흐름: 요약 만들기 → 초안 검토·수정 → 확정 저장 (F-02). 확정 전에는 정식 기록이 아니다.
+ * 상담 기록 상세와 AI 요약 검토·승인.
+ * 기록 조회(GET), 수정(PATCH) / 요약 생성·조회·승인(POST·GET·PUT)을 한 화면에서 한다.
  */
 export default function SessionPage() {
   const { caseId = '', sessionId = '' } = useParams();
-  const { user } = useAuth();
+  const location = useLocation();
+  const cid = Number(caseId);
+  const sid = Number(sessionId);
+  const validIds = Number.isInteger(cid) && cid > 0 && Number.isInteger(sid) && sid > 0;
 
-  const [load, setLoad] = useState<Load>({ kind: 'loading' });
-  const [item, setItem] = useState<CounselingCase | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [summary, setSummary] = useState<SessionSummary | null>(null);
+  const [item, setItem] = useState<CaseRow | null>(null);
+  const [session, setSession] = useState<ApiSession | null>(null);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState((location.state as { notice?: string } | null)?.notice ?? '');
 
-  const [recordText, setRecordText] = useState('');
-  const [savingRecord, setSavingRecord] = useState(false);
-  const [recordError, setRecordError] = useState('');
-  const [recordChangedAfterDraft, setRecordChangedAfterDraft] = useState(false);
-
-  const [phase, setPhase] = useState<SummaryPhase>('idle');
-  const [phaseError, setPhaseError] = useState('');
-  const [evidenceKey, setEvidenceKey] = useState<SummaryKey | null>(null);
-  const [notice, setNotice] = useState('');
+  const [hasSummary, setHasSummary] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [date, setDate] = useState('');
+  const [content, setContent] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saveDetail, setSaveDetail] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!validIds) return;
     let cancelled = false;
-    setLoad({ kind: 'loading' });
-    Promise.all([getCase(user, caseId), getSessionDetail(user, caseId, sessionId)])
-      .then(([c, detail]) => {
+    Promise.all([fetchCase(cid), fetchSession(cid, sid)])
+      .then(([row, found]) => {
         if (cancelled) return;
-        setItem(c);
-        setSession(detail.session);
-        setRecordText(detail.session.record);
-        setSummary(detail.summary);
-        setLoad({ kind: 'ready' });
+        setItem(row);
+        setSession(found);
       })
       .catch((e) => {
         if (cancelled) return;
-        setLoad(e instanceof ForbiddenError ? { kind: 'blocked', message: e.message } : { kind: 'error' });
+        setError(
+          e instanceof ApiError && e.status === 404
+            ? '이 상담 기록을 열 수 없어요. 없는 기록이거나 내게 배정된 사례가 아니에요.'
+            : describeApiError(e, '상담 기록을 불러오지 못했어요.'),
+        );
       });
     return () => {
       cancelled = true;
     };
-  }, [user, caseId, sessionId]);
+  }, [cid, sid, validIds]);
 
   const back = (
     <Link className="back-link" to={`/counselor/cases/${caseId}`}>
@@ -75,89 +68,63 @@ export default function SessionPage() {
     </Link>
   );
 
-  if (load.kind === 'loading') {
+  if (!validIds) {
     return (
       <>
         {back}
-        <StateMessage message="회기를 불러오는 중이에요." />
+        <StateMessage role="alert" message="주소의 번호가 올바르지 않아요." />
       </>
     );
   }
-  if (load.kind === 'blocked' || load.kind === 'error' || !item || !session || !user) {
+  if (error) {
     return (
       <>
         {back}
-        <StateMessage
-          role="alert"
-          message={load.kind === 'blocked' ? load.message : '회기를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.'}
-        />
+        <StateMessage role="alert" message={error} />
+      </>
+    );
+  }
+  if (!item || !session) {
+    return (
+      <>
+        {back}
+        <StateMessage message="상담 기록을 불러오는 중이에요." />
       </>
     );
   }
 
-  const confirmed = summary?.status === 'confirmed';
-  const recordDirty = recordText.trim() !== session.record.trim();
-  const snippets = evidenceKey && summary?.evidence ? summary.evidence[evidenceKey] : [];
+  const startEdit = () => {
+    setDate(session.sessionDate);
+    setContent(session.content);
+    setSaveError('');
+    setSaveDetail(null);
+    setEditing(true);
+  };
 
-  const handleSaveRecord = async () => {
-    setSavingRecord(true);
-    setRecordError('');
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setSaveError('');
+    setSaveDetail(null);
+    const problem = validateSessionInput({ sessionDate: date, content });
+    if (problem) return setSaveError(problem);
+    setSaving(true);
     try {
-      const saved = await updateRecord(user, caseId, sessionId, recordText);
-      setSession(saved);
-      setRecordText(saved.record);
-      setNotice('상담 기록을 저장했어요.');
-      if (summary) setRecordChangedAfterDraft(true);
-    } catch (e) {
-      setRecordError(e instanceof Error ? e.message : '저장하지 못했어요.');
+      setSession(await updateSession(cid, sid, { sessionDate: date, content }));
+      setEditing(false);
+      setNotice('상담 기록을 고쳤어요.');
+    } catch (err) {
+      setSaveError(describeSessionError(err, 'update'));
+      setSaveDetail(serverDetail(err));
     } finally {
-      setSavingRecord(false);
+      setSaving(false);
     }
-  };
-
-  const handleGenerate = async () => {
-    setPhase('generating');
-    setPhaseError('');
-    setEvidenceKey(null);
-    setNotice('');
-    try {
-      const created = await generateSummary(user, caseId, sessionId);
-      setSummary(created);
-      setRecordChangedAfterDraft(false);
-      setPhase('idle');
-    } catch (e) {
-      setPhaseError(e instanceof Error ? e.message : 'AI 요약을 만들지 못했어요.');
-      setPhase('error');
-    }
-  };
-
-  const handleManual = async () => {
-    setPhaseError('');
-    try {
-      setSummary(await createManualDraft(user, caseId, sessionId));
-      setPhase('idle');
-    } catch (e) {
-      setPhaseError(e instanceof Error ? e.message : '시작하지 못했어요.');
-      setPhase('error');
-    }
-  };
-
-  const handleSaveDraft = async (fields: SummaryFields) => {
-    setSummary(await saveDraft(user, caseId, sessionId, fields));
-    setNotice('초안을 저장했어요. 아직 확정 전이에요.');
-  };
-
-  const handleConfirm = async (fields: SummaryFields) => {
-    setSummary(await confirmSummary(user, caseId, sessionId, fields));
-    setEvidenceKey(null);
-    setNotice('요약을 확정해 저장했어요.');
   };
 
   return (
     <>
       {back}
-      <PageHead title={`${item.clientAlias} ${session.number}회기`}>
-        {formatDateTime(session.heldAt)}, {SESSION_METHOD_LABEL[session.method]}
+      <PageHead title={`${session.sessionNumber}회기 · ${formatDateOnly(session.sessionDate)}`}>
+        {item.alias} · {item.title}
       </PageHead>
 
       {notice ? (
@@ -166,67 +133,79 @@ export default function SessionPage() {
         </p>
       ) : null}
 
-      <div className="split">
-        <section aria-labelledby="record-heading" className="stack">
+      <section className="section" aria-labelledby="record-heading">
+        <div className="section__head">
           <h2 id="record-heading">상담 기록</h2>
+          {!editing ? (
+            <button type="button" className="btn btn--quiet btn--sm" onClick={startEdit} disabled={hasSummary}>
+              기록 고치기
+            </button>
+          ) : null}
+        </div>
 
-          {evidenceKey ? (
-            <>
-              <p className="field__hint">요약의 근거가 된 문장을 표시했어요.</p>
-              <HighlightedText text={session.record} snippets={snippets} />
-            </>
-          ) : confirmed ? (
-            <p className="record-text">{session.record}</p>
-          ) : (
-            <>
-              <div className="field">
-                <label className="visually-hidden" htmlFor="record-edit">
-                  상담 기록
-                </label>
-                <textarea
-                  id="record-edit"
-                  className="field__input field__input--area"
-                  rows={14}
-                  value={recordText}
-                  onChange={(e) => setRecordText(e.target.value)}
-                />
-                <span className="field__hint">{recordText.trim().length}자</span>
-              </div>
-              {recordError ? (
-                <p className="form-error" role="alert">
-                  {recordError}
-                </p>
-              ) : null}
-              <div className="actions">
-                <button type="button" className="btn btn--quiet btn--sm" disabled={!recordDirty || savingRecord} onClick={handleSaveRecord}>
-                  {savingRecord ? '저장하는 중이에요' : '기록 저장'}
-                </button>
-              </div>
-              {recordChangedAfterDraft ? (
-                <p className="field__hint">기록을 고쳤어요. 요약에 반영하려면 ‘다시 만들기’를 눌러 주세요.</p>
-              ) : null}
-            </>
-          )}
-          {confirmed && !evidenceKey ? <p className="field__hint">요약을 확정한 회기의 기록은 고칠 수 없어요.</p> : null}
-        </section>
+        {hasSummary && !editing ? (
+          <p className="field__hint">AI 요약이 만들어진 회기는 기록을 고칠 수 없어요(요약과 어긋나지 않게 하기 위해서예요).</p>
+        ) : null}
 
-        <section aria-labelledby="summary-heading" className="stack">
-          <h2 id="summary-heading">AI 요약</h2>
-          <SummaryPanel
-            summary={summary}
-            phase={phase}
-            errorMessage={phaseError}
-            canGenerate={recordText.trim().length >= 20 && !recordDirty}
-            evidenceKey={evidenceKey}
-            onToggleEvidence={(key) => setEvidenceKey((cur) => (cur === key ? null : key))}
-            onGenerate={handleGenerate}
-            onManual={handleManual}
-            onSaveDraft={handleSaveDraft}
-            onConfirm={handleConfirm}
-          />
-          {!summary && recordDirty ? <p className="field__hint">기록을 저장한 뒤에 요약을 만들 수 있어요.</p> : null}
-        </section>
-      </div>
+        {editing ? (
+          <form className="stack" onSubmit={save} noValidate>
+            <div className="field">
+              <label className="field__label" htmlFor="edit-date">
+                상담 날짜
+              </label>
+              <input id="edit-date" type="date" className="field__input" value={date} onChange={(e) => setDate(e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field__label" htmlFor="edit-content">
+                상담 기록
+              </label>
+              <textarea
+                id="edit-content"
+                className="field__input field__input--area"
+                style={{ minHeight: 200 }}
+                maxLength={SESSION_CONTENT_MAX}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              />
+              <span className="field__hint">
+                {content.trim().length.toLocaleString()} / {SESSION_CONTENT_MAX.toLocaleString()}자
+              </span>
+            </div>
+            {saveError ? (
+              <div role="alert">
+                <p className="form-error">{saveError}</p>
+                {saveDetail ? <p className="field__hint">서버 메시지: {saveDetail}</p> : null}
+              </div>
+            ) : null}
+            <div className="actions">
+              <button type="submit" className="btn btn--primary btn--sm" disabled={saving}>
+                {saving ? '저장하는 중이에요' : '고친 내용 저장'}
+              </button>
+              <button type="button" className="btn btn--quiet btn--sm" onClick={() => setEditing(false)} disabled={saving}>
+                취소
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <p className="record-view">{session.content}</p>
+            <p className="field__hint">
+              작성 {formatDateTime(session.createdAt)}
+              {session.updatedAt ? ` · 최근 수정 ${formatDateTime(session.updatedAt)}` : ''}
+            </p>
+          </>
+        )}
+      </section>
+
+      <section className="section" aria-labelledby="summary-heading">
+        <h2 id="summary-heading">AI 상담 요약</h2>
+        <AiSummaryPanel
+          sessionId={sid}
+          canGenerate={session.content.trim().length > 0 && !editing}
+          canConfirm
+          onExistsChange={setHasSummary}
+        />
+      </section>
     </>
   );
 }

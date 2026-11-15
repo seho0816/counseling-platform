@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import Brand from '../components/Brand';
 
-/** 기관 관리자 화면: 계정·권한·접근 로그를 다룬다. */
+/** 기관 관리자 화면: 사례·상담 신청·접근 로그·계정을 다룬다. */
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -16,12 +16,15 @@ export default function AdminLayout() {
     <>
       <header className="topbar">
         <div className="topbar__inner">
-          <Brand to="/admin" />
+          <Brand to="/admin/cases" />
           <nav className="topbar__nav" aria-label="관리자 메뉴">
             <NavLink to="/admin/cases" className="topbar__link">
               사례 목록
             </NavLink>
-            <NavLink to="/admin" end className="topbar__link">
+            <NavLink to="/admin/intakes" className="topbar__link">
+              상담 신청
+            </NavLink>
+            <NavLink to="/admin/logs" className="topbar__link">
               접근 로그
             </NavLink>
             <NavLink to="/admin/accounts" className="topbar__link">

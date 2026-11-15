@@ -1,39 +1,53 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { createSession, getCase } from '../../api/caseApi';
-import { ForbiddenError } from '../../api/caseGuard';
-import { useAuth } from '../../auth/AuthContext';
+import { describeApiError, serverDetail } from '../../api/http';
+import { fetchCase } from '../../api/remoteCaseApi';
+import {
+  SESSION_CONTENT_MAX,
+  createSession,
+  describeSessionError,
+  fetchSessions,
+  validateSessionInput,
+} from '../../api/remoteSessionApi';
 import PageHead from '../../components/PageHead';
 import StateMessage from '../../components/StateMessage';
-import { SESSION_METHOD_LABEL } from '../../constants/fields';
-import { stateOf } from '../../domain/caseState';
-import type { CounselingCase, SessionMethod } from '../../types';
-import { toDateTimeLocal } from '../../utils/schedule';
+import { isTerminalStatus } from '../../constants/labels';
+import type { CaseRow } from '../../types';
+import { todayIso } from '../../utils/format';
 
-/** 회기 추가와 상담 기록 작성 (F-01-2) */
+/** 새 상담 기록 작성(POST /api/cases/{caseId}/sessions) — 담당 상담사만 쓴다. */
 export default function NewSessionPage() {
   const { caseId = '' } = useParams();
-  const { user } = useAuth();
   const navigate = useNavigate();
+  const id = Number(caseId);
+  const validId = Number.isInteger(id) && id > 0;
 
-  const [item, setItem] = useState<CounselingCase | null>(null);
+  const [item, setItem] = useState<CaseRow | null>(null);
   const [loadError, setLoadError] = useState('');
-  const [heldAt, setHeldAt] = useState(() => toDateTimeLocal(new Date()));
-  const [method, setMethod] = useState<SessionMethod>('chat');
-  const [record, setRecord] = useState('');
+  const [sessionNumber, setSessionNumber] = useState('1');
+  const [sessionDate, setSessionDate] = useState(todayIso());
+  const [content, setContent] = useState('');
+  const [existingNumbers, setExistingNumbers] = useState<number[]>([]);
   const [error, setError] = useState('');
+  const [detail, setDetail] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!validId) return;
     let cancelled = false;
-    getCase(user, caseId)
-      .then((data) => !cancelled && setItem(data))
-      .catch((e) => !cancelled && setLoadError(e instanceof ForbiddenError ? e.message : '사례를 불러오지 못했어요.'));
+    Promise.all([fetchCase(id), fetchSessions(id)])
+      .then(([row, sessions]) => {
+        if (cancelled) return;
+        setItem(row);
+        const numbers = sessions.map((s) => s.sessionNumber);
+        setExistingNumbers(numbers);
+        setSessionNumber(String((numbers.length ? Math.max(...numbers) : 0) + 1));
+      })
+      .catch((e) => !cancelled && setLoadError(describeApiError(e, '사례를 불러오지 못했어요.')));
     return () => {
       cancelled = true;
     };
-  }, [user, caseId]);
+  }, [id, validId]);
 
   const back = (
     <Link className="back-link" to={`/counselor/cases/${caseId}`}>
@@ -41,6 +55,14 @@ export default function NewSessionPage() {
     </Link>
   );
 
+  if (!validId) {
+    return (
+      <>
+        {back}
+        <StateMessage role="alert" message="주소의 사례 번호가 올바르지 않아요." />
+      </>
+    );
+  }
   if (loadError) {
     return (
       <>
@@ -57,31 +79,33 @@ export default function NewSessionPage() {
       </>
     );
   }
-
-  const state = stateOf(item.status);
-  if (!state.canAddSession()) {
+  if (isTerminalStatus(item.statusRaw)) {
     return (
       <>
         {back}
-        <StateMessage message={state.sessionBlockedReason() ?? '이 사례에는 회기를 추가할 수 없어요.'} />
+        <StateMessage role="alert" message="종결·연계된 사례에는 새 상담 기록을 쓸 수 없어요." />
       </>
     );
   }
 
+  const number = Number(sessionNumber);
+  const duplicate = existingNumbers.includes(number);
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!user) return;
-    if (!record.trim()) {
-      setError('상담 기록을 입력해 주세요.');
-      return;
-    }
-    setBusy(true);
     setError('');
+    setDetail(null);
+    const input = { sessionNumber: sessionNumber.trim() === '' ? null : number, sessionDate, content };
+    const problem = validateSessionInput(input);
+    if (problem) return setError(problem);
+    if (duplicate) return setError('이미 같은 회차 번호의 기록이 있어요. 회차 번호를 바꿔 주세요.');
+    setBusy(true);
     try {
-      const session = await createSession(user, caseId, { heldAt, method, record });
-      navigate(`/counselor/cases/${caseId}/sessions/${session.id}`, { replace: true });
+      const created = await createSession(id, { sessionNumber: number, sessionDate, content });
+      navigate(`/counselor/cases/${id}/sessions/${created.id}`, { replace: true, state: { notice: '상담 기록을 저장했어요.' } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : '저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
+      setError(describeSessionError(err, 'create'));
+      setDetail(serverDetail(err));
       setBusy(false);
     }
   };
@@ -89,56 +113,73 @@ export default function NewSessionPage() {
   return (
     <>
       {back}
-      <PageHead title={`${item.clientAlias} ${item.sessionCount + 1}회기 기록`}>
-        상담 내용을 기록해요. 저장한 뒤 AI 요약을 만들 수 있어요. 가상 데이터만 입력해 주세요.
+      <PageHead title="새 상담 기록">
+        {item.alias} · {item.title}
       </PageHead>
 
       <form className="form form--narrow" onSubmit={handleSubmit} noValidate>
-        <div className="field">
-          <label className="field__label" htmlFor="heldAt">
-            상담 일시
-          </label>
-          <input id="heldAt" type="datetime-local" className="field__input" value={heldAt} onChange={(e) => setHeldAt(e.target.value)} />
+        <div className="field__row">
+          <div className="field">
+            <label className="field__label" htmlFor="session-number">
+              회차
+            </label>
+            <input
+              id="session-number"
+              type="number"
+              min={1}
+              max={500}
+              className="field__input"
+              inputMode="numeric"
+              value={sessionNumber}
+              onChange={(e) => setSessionNumber(e.target.value)}
+              aria-invalid={duplicate}
+            />
+            {duplicate ? <span className="form-error">이미 있는 회차예요.</span> : <span className="field__hint">다음 회차가 자동으로 들어가요.</span>}
+          </div>
+          <div className="field">
+            <label className="field__label" htmlFor="session-date">
+              상담 날짜
+            </label>
+            <input
+              id="session-date"
+              type="date"
+              className="field__input"
+              value={sessionDate}
+              onChange={(e) => setSessionDate(e.target.value)}
+            />
+          </div>
         </div>
 
         <div className="field">
-          <label className="field__label" htmlFor="method">
-            상담 방식
-          </label>
-          <select id="method" className="field__input" value={method} onChange={(e) => setMethod(e.target.value as SessionMethod)}>
-            {(Object.keys(SESSION_METHOD_LABEL) as SessionMethod[]).map((m) => (
-              <option key={m} value={m}>
-                {SESSION_METHOD_LABEL[m]}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="field">
-          <label className="field__label" htmlFor="record">
+          <label className="field__label" htmlFor="session-content">
             상담 기록
           </label>
           <textarea
-            id="record"
+            id="session-content"
             className="field__input field__input--area"
-            rows={12}
-            value={record}
-            onChange={(e) => setRecord(e.target.value)}
+            style={{ minHeight: 220 }}
+            maxLength={SESSION_CONTENT_MAX}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            placeholder="이번 회기에서 있었던 일을 적어 주세요. 실제 이름이나 연락처는 쓰지 마세요."
           />
-          <span className="field__hint">{record.trim().length}자. 20자 이상이면 AI 요약을 만들 수 있어요.</span>
+          <span className="field__hint">
+            {content.trim().length.toLocaleString()} / {SESSION_CONTENT_MAX.toLocaleString()}자. 저장한 뒤에 AI 요약을 만들 수 있어요.
+          </span>
         </div>
 
         {error ? (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
+          <div role="alert">
+            <p className="form-error">{error}</p>
+            {detail ? <p className="field__hint">서버 메시지: {detail}</p> : null}
+          </div>
         ) : null}
 
         <div className="actions">
           <button type="submit" className="btn btn--primary" disabled={busy}>
             {busy ? '저장하는 중이에요' : '기록 저장'}
           </button>
-          <Link className="btn btn--quiet" to={`/counselor/cases/${caseId}`}>
+          <Link className="btn btn--quiet" to={`/counselor/cases/${id}`}>
             취소
           </Link>
         </div>

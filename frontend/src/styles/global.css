@@ -1313,3 +1313,56 @@ mark {
     animation: none !important;
   }
 }
+
+/* ---------- AI 요약(실제 API) ---------- */
+.ai-summary {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+
+.ai-summary__item {
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+}
+
+.ai-summary__item dt {
+  margin-bottom: 4px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.ai-summary__item dd {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.7;
+}
+
+.ai-summary__draft summary {
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.record-view {
+  margin: 0;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  white-space: pre-wrap;
+  line-height: 1.8;
+}
+
+.consent-list {
+  margin: 0;
+  padding-left: 1.2em;
+  list-style: disc;
+  display: grid;
+  gap: 4px;
+  font-size: var(--fs-sm);
+}

@@ -1,5 +1,5 @@
 import { toStatusLabel } from '../constants/labels';
-import type { ApiCase, ApiCasePage, CaseRow } from '../types';
+import type { ApiCase, ApiCasePage, CaseRow, CaseStatusCode } from '../types';
 import { apiFetch } from './http';
 
 export interface CasePage {
@@ -57,3 +57,12 @@ export async function fetchCase(id: number): Promise<CaseRow> {
 
 /** 사례 생성·배정 응답(ApiCase)을 화면용으로 바꾼다. */
 export { toCaseRow as caseFromApi };
+
+/**
+ * PATCH /api/cases/{id}/status — 사례 상태를 바꾼다(관리자·담당 상담사).
+ * 허용되지 않는 전이는 409, 담당이 아닌 사례는 404, 상태 값이 틀리면 400이다.
+ */
+export async function changeCaseStatus(id: number, status: CaseStatusCode): Promise<CaseRow> {
+  const data = await apiFetch<ApiCase>(`/api/cases/${id}/status`, { method: 'PATCH', json: { status } });
+  return toCaseRow(data);
+}
