@@ -66,6 +66,50 @@ public class AdminCounselorService {
             .map(CounselorResponse::from).toList();
     }
 
+
+
+@Transactional
+@PreAuthorize("hasRole('ADMIN')")
+public CounselorResponse updateStatus(
+        Long counselorId,
+        UpdateCounselorStatusRequest request,
+        Authentication authentication) {
+
+    // 관리자 권한 및 활성 계정 확인
+    activeActors.require(authentication, UserRole.ADMIN);
+
+    // 입력값 검증
+    if (counselorId == null || counselorId < 1) {
+        throw new ResponseStatusException(
+            HttpStatus.BAD_REQUEST, "Invalid counselor id");
+    }
+
+    if (request == null || request.isActive() == null) {
+        throw new ResponseStatusException(
+            HttpStatus.BAD_REQUEST, "isActive is required");
+    }
+
+    // 상담사 계정 조회
+    User counselor = users.findById(counselorId)
+        .orElseThrow(() -> new ResponseStatusException(
+            HttpStatus.NOT_FOUND, "Counselor not found"));
+
+    // 관리자 계정 등의 변경 방지
+    if (counselor.getRole() != UserRole.COUNSELOR) {
+        throw new ResponseStatusException(
+            HttpStatus.NOT_FOUND, "Counselor not found");
+    }
+
+    // 활성 상태 변경
+    counselor.setActive(request.isActive());
+
+    // DB 저장 후 변경 결과 반환
+    return CounselorResponse.from(
+        users.saveAndFlush(counselor)
+    );
+}
+
+
     private static ResponseStatusException badRequest(String reason) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, reason);
     }
