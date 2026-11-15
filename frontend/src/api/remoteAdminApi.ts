@@ -111,3 +111,15 @@ export function counselorLabel(names: Record<number, string>, id: number | null)
   if (id === null) return '미배정';
   return names[id] ? `${names[id]} (#${id})` : `#${id}`;
 }
+
+/**
+ * PATCH /api/admin/counselors/{counselorId}/status — 상담사 사용 중지·다시 사용(ADMIN 전용).
+ * 요청 본문은 {"isActive": true|false}, 응답은 바뀐 상담사 한 명(목록과 같은 모양, 필드 이름은 active)이다.
+ * 상담사가 아니거나 없는 번호는 404, isActive가 없으면 400이다.
+ */
+export async function setCounselorActive(counselorId: number, isActive: boolean): Promise<ApiCounselorAccount> {
+  return apiFetch<ApiCounselorAccount>(`/api/admin/counselors/${counselorId}/status`, {
+    method: 'PATCH',
+    json: { isActive },
+  });
+}
