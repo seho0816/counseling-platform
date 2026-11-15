@@ -1,17 +1,15 @@
 import { useEffect, useReducer, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
-import { submitIntake } from '../../api/chatbotApi';
-import { useAuth } from '../../auth/AuthContext';
+import { Link, useNavigate } from 'react-router-dom';
 import { chatReducer, initialChatState, type ChatMessage, type ChatOption } from '../../chatbot/chatReducer';
 import PageHead from '../../components/PageHead';
-import type { IntakeAnswers } from '../../types';
 
 /**
  * 비대면 보조 챗봇 (F-04). 안내·접수만 돕는다.
+ * 질문지를 모두 답하면 ‘이대로 접수하기’가 신청서 화면(/apply)으로 이동하고, 거기서 이름(별칭)과 개인정보 동의를 확인해 실제 신청을 마친다.
  * 선택지 위주로 진행하고, 글로 쓴 내용은 위기 표현 → 질문지 답 → 상담 요청 → 낱말 연결 순서로 확인한다.
  */
 export default function ChatbotPage() {
-  const { user } = useAuth();
+  const navigate = useNavigate();
   const [state, dispatch] = useReducer(chatReducer, undefined, initialChatState);
   const [text, setText] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
@@ -22,28 +20,29 @@ export default function ChatbotPage() {
     endRef.current?.scrollIntoView({ block: 'end' });
   }, [state.messages.length]);
 
-  const runSubmit = async () => {
-    if (!user) return;
+  /** 챗봇에서 모은 답을 신청서 화면으로 넘긴다(분야·힘든 점은 미리 채우고, 서버에 저장 칸이 없는 답은 안내만 한다). */
+  const goToApply = () => {
     const { answers, crisis } = stateRef.current;
-    const full: IntakeAnswers = {
-      field: answers.field ?? '',
-      ageGroup: answers.ageGroup ?? '',
-      method: answers.method ?? '',
-      time: answers.time ?? '',
-      concern: answers.concern ?? '',
-    };
-    try {
-      const result = await submitIntake(user, full, crisis);
-      dispatch({ type: 'submitted', intakeId: result.intakeId, counselorName: result.counselorName });
-    } catch {
-      dispatch({ type: 'submitFailed' });
-    }
+    navigate('/apply', {
+      state: {
+        fromChatbot: true,
+        field: answers.field ?? '',
+        ageGroup: answers.ageGroup ?? '',
+        method: answers.method ?? '',
+        time: answers.time ?? '',
+        concern: answers.concern ?? '',
+        crisis,
+      },
+    });
   };
 
   const choose = (option: ChatOption) => {
     if (state.submitting) return;
+    if (option.id === 'submit') {
+      goToApply();
+      return;
+    }
     dispatch({ type: 'choose', id: option.id, label: option.label });
-    if (option.id === 'submit') void runSubmit();
   };
 
   const send = (e: FormEvent) => {
@@ -59,7 +58,7 @@ export default function ChatbotPage() {
     <>
       <PageHead title="챗봇 안내">기관과 프로그램을 안내받고, 상담 신청을 위한 질문지를 작성해요.</PageHead>
 
-      <p className="banner">이 챗봇은 AI예요. 상담·진단·조언은 하지 않고, 안내와 접수만 도와요.</p>
+      <p className="banner">이 챗봇은 AI예요. 상담·진단·조언은 하지 않고, 안내와 접수만 도와요. 접수는 마지막에 신청서 화면에서 마무리해요.</p>
 
       <div className="chat">
         <div className="chat__log" role="log" aria-live="polite" aria-label="챗봇 대화">

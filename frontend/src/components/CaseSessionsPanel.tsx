@@ -49,7 +49,7 @@ export default function CaseSessionsPanel({ item, casePath, canWrite }: Props) {
         <p className="field__hint">종결·연계된 사례에는 새 상담 기록을 쓸 수 없어요. 기존 기록은 볼 수 있어요.</p>
       ) : null}
       {canWrite && item.statusRaw === 'RECEIVED' ? (
-        <p className="field__hint">상담을 시작하면 위의 \u2018상담 시작(진행으로 변경)\u2019으로 상태를 바꿔 주세요.</p>
+        <p className="field__hint">상담을 시작하면 위의 ‘상담 시작(진행으로 변경)’으로 상태를 바꿔 주세요.</p>
       ) : null}
 
       {error && !sessions ? (
@@ -65,7 +65,7 @@ export default function CaseSessionsPanel({ item, casePath, canWrite }: Props) {
       ) : sessions === null ? (
         <StateMessage message="상담 회기를 불러오는 중이에요." />
       ) : sessions.length === 0 ? (
-        <StateMessage message="아직 상담 기록이 없어요. \u2018새 상담 기록 작성\u2019으로 첫 회기를 기록해 보세요." />
+        <StateMessage message="아직 상담 기록이 없어요. ‘새 상담 기록 작성’으로 첫 회기를 기록해 보세요." />
       ) : (
         <ul className="list" aria-labelledby="sessions-heading">
           {sessions.map((s) => (

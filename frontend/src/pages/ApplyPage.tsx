@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { describeSubmitError, submitIntake, validateIntake } from '../api/remoteIntakeApi';
 import Brand from '../components/Brand';
 import PageHead from '../components/PageHead';
@@ -9,16 +9,46 @@ import type { ApiIntakeAccepted } from '../types';
 
 type Prior = 'yes' | 'no' | 'unknown';
 
+/** 챗봇에서 신청서로 넘어올 때 함께 오는 값(챗봇 ‘이대로 접수하기’) */
+interface ChatbotHandoff {
+  fromChatbot?: boolean;
+  field?: string;
+  ageGroup?: string;
+  method?: string;
+  time?: string;
+  concern?: string;
+  crisis?: boolean;
+}
+
+/** 챗봇의 분야 선택을 신청서의 분야 목록에 맞춘다. 목록에 없으면(‘잘 모르겠어요’ 등) ‘기타’로 둔다. */
+function toCategory(field: string | undefined): string {
+  if (!field) return '';
+  return (COUNSELING_FIELDS as readonly string[]).includes(field) ? field : '기타';
+}
+
+/** 서버에 저장 칸이 없는 챗봇 답변(연령대·상담 방식·편한 시간대)을 한 줄로 만든다. */
+function extrasLine(h: ChatbotHandoff): string {
+  const parts: string[] = [];
+  if (h.ageGroup) parts.push(`연령대 ${h.ageGroup}`);
+  if (h.method) parts.push(`상담 방식 ${h.method}`);
+  if (h.time) parts.push(`편한 시간대 ${h.time}`);
+  return parts.length ? `(희망: ${parts.join(', ')})` : '';
+}
+
 /**
  * 비회원 상담 신청(공개 화면, 로그인 없이 사용) — POST /api/intakes
  * 신청서는 관리자가 확인한 뒤 상담 사례로 전환하고 상담사를 배정한다.
  * 이 서비스는 실습용이므로 실제 이름·연락처 대신 가상 정보를 쓰도록 안내한다.
  */
 export default function ApplyPage() {
+  const handoff = ((useLocation().state as ChatbotHandoff | null) ?? {}) as ChatbotHandoff;
+  const fromChatbot = handoff.fromChatbot === true;
+  const extras = fromChatbot ? extrasLine(handoff) : '';
+
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
-  const [category, setCategory] = useState('');
-  const [concern, setConcern] = useState('');
+  const [category, setCategory] = useState(() => (fromChatbot ? toCategory(handoff.field) : ''));
+  const [concern, setConcern] = useState(() => (fromChatbot ? (handoff.concern ?? '').trim() : ''));
   const [prior, setPrior] = useState<Prior>('unknown');
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState('');
@@ -94,6 +124,11 @@ export default function ApplyPage() {
               <button type="button" className="btn btn--quiet" onClick={reset}>
                 새 신청 작성
               </button>
+              {fromChatbot ? (
+                <Link className="btn btn--quiet" to="/client/chatbot">
+                  챗봇으로 돌아가기
+                </Link>
+              ) : null}
             </div>
           </section>
         ) : (
@@ -101,6 +136,33 @@ export default function ApplyPage() {
             <PageHead title="상담 신청">
               상담을 받고 싶은 분야와 고민을 알려 주세요. 기관이 확인한 뒤 상담사를 배정해요. 로그인은 필요 없어요.
             </PageHead>
+
+            {fromChatbot && handoff.crisis ? (
+              <div style={{ marginBottom: 20 }}>
+                <SafetyNotice />
+              </div>
+            ) : null}
+
+            {fromChatbot ? (
+              <div className="banner" role="status">
+                <p>
+                  <strong>챗봇에서 입력한 내용을 가져왔어요.</strong> 이름(별칭)과 개인정보 동의를 확인하고 제출하면 상담 신청이 완료돼요.
+                </p>
+                {extras ? (
+                  <p className="field__hint" style={{ marginTop: 6 }}>
+                    챗봇에서 고른 내용({extras.slice(5, -1)})은 신청서에 따로 저장되지 않아요. 상담사에게 꼭 전하고 싶다면 고민 내용에 함께 적어 주세요.{' '}
+                    <button
+                      type="button"
+                      className="btn btn--quiet btn--sm"
+                      onClick={() => setConcern((prev) => (prev.includes(extras) ? prev : `${prev.trim()}${prev.trim() ? '\n' : ''}${extras}`))}
+                      disabled={concern.includes(extras)}
+                    >
+                      고민 내용에 함께 적기
+                    </button>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
             <p className="banner banner--mock" role="note">
               <strong>실습용 서비스</strong> 이 서비스는 실습용이에요. 실제 이름과 연락처 대신 가상 정보(별칭)를 입력해 주세요.

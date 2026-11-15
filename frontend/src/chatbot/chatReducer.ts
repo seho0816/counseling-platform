@@ -97,7 +97,7 @@ function reviewMessage(answers: Partial<IntakeAnswers>): Draft {
     label: ANSWER_LABEL[key],
     value: answers[key] && answers[key] !== '' ? String(answers[key]) : '(쓰지 않았어요)',
   }));
-  return bot(['아래 내용으로 접수할게요. 맞는지 확인해 주세요.'], [
+  return bot(['아래 내용으로 접수할게요. 맞는지 확인해 주세요.', '‘이대로 접수하기’를 누르면 신청서 화면으로 이동해요. 거기서 이름(별칭)과 개인정보 동의를 확인하면 신청이 끝나요.'], [
     { id: 'submit', label: '이대로 접수하기' },
     { id: 'restart', label: '처음부터 다시 쓰기' },
     HOME,

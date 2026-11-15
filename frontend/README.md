@@ -74,8 +74,7 @@ Spring Boot는 `localhost:8080`, React는 `localhost:5173`에서 실행한다.
 | `src/api/remoteAdminApi.ts` | 상담사 목록·등록, 내담자 등록, 사례 생성, 상담사 배정, 입력 검사(백엔드 규칙과 동일) |
 | `src/api/healthApi.ts` | 서버 상태 확인(`/api/health`) |
 | `src/constants/labels.ts` | 상태 변환표(RECEIVED→접수, IN_PROGRESS→진행, CLOSED→종결, REFERRED→연계) |
-| `src/api/caseApi.ts`, `adminApi.ts` 등 기존 파일 | Mock. 아직 쓰는 화면(가상 데이터 화면)이 있어 그대로 둠 |
-| `*MockPage.tsx`(`CaseDetailMockPage`, `NewSessionMockPage`, `SessionMockPage`, `AdminHomeMockPage`) | 예전 Mock 화면(보존용, 라우트 연결 없음) |
+| `src/api/caseApi.ts`, `counselorApi.ts`, `caseGuard.ts`, `accessLog.ts`, `src/mocks/*`, `src/domain/*`, `src/chatbot/*` | 아직 가상(Mock)인 화면(챗봇, 상담사 찾기, 상담사용 사례 등록)이 쓰는 파일 |
 
 ### 로그인이 안 될 때
 - `서버에 연결하지 못했어요` → Spring Boot가 켜져 있는지 확인(`http://localhost:8080/api/health`가 OK인지).
@@ -134,23 +133,18 @@ src/
   utils/        날짜·가능 시간 계산
 ```
 
-## 백엔드·AI 연동
+## 아직 가상(Mock)인 부분
 
-화면은 `src/api/*` 함수만 부르므로, 함수 안의 Mock만 `fetch`로 바꾸면 화면 코드는 그대로 둘 수 있습니다.
+백엔드 API가 없어서 가상 데이터로 동작하는 화면입니다. API가 생기면 해당 함수 안의 Mock만 `fetch`로 바꾸면 화면 코드는 그대로 둘 수 있습니다.
 
-| 파일 | 함수 | 담당 | 바꿀 내용 |
-| --- | --- | --- | --- |
-| `authApi.ts` | `loginWithPassword`, `enterAsClient` | 백엔드 | 로그인 API |
-| `caseApi.ts` | `listCases`, `getCase`, `createCase`, `changeStatus` | 백엔드 | 사례 API. 상태 전이 규칙은 서버에서도 검사 |
-| `caseApi.ts` | `listSessions`, `createSession`, `updateRecord`, `getIntake` | 백엔드 | 회기·기록·질문지 API |
-| `summaryApi.ts` | `generateSummary` | AI·데이터 | 요약 생성 API. 마스킹 후 LLM 호출 |
-| `summaryApi.ts` | `saveDraft`, `confirmSummary`, `createManualDraft` | 백엔드 | 요약 저장·확정 API |
-| `chatbotApi.ts` | `submitIntake` | 백엔드 | 질문지 저장과 사례 생성, 상담사 배정 |
-| `adminApi.ts` | `listLogs`, `listAccounts`, `setAccountActive`, `createCounselorAccount` | 백엔드 | 관리자 API |
-| `accessLog.ts`, `caseGuard.ts` | 로그 기록, 권한 검사 | 백엔드 | **서버에서 모든 요청마다 수행**. 프론트에서 하면 우회할 수 있음 |
+| 화면 | 쓰는 파일 | 필요한 백엔드 API |
+| --- | --- | --- |
+| 내담자 가상 입장(로그인 화면의 "내담자" 탭) | `authApi.ts`의 `enterAsClient` | (필요 없다고 정함) |
+| 챗봇 대화(`/client/chatbot`) | `chatbot/*`(대화 흐름, 위기 감지 `safety.ts`) | 안내·위기 감지 API. 접수는 마지막에 `/apply`로 이동해 실제 서버에 저장 |
+| 상담사 찾기·일정(`/client/counselors…`) | `counselorApi.ts`, `mocks/*` | 상담사 프로필·분야·가능 시간 API |
+| 상담사용 사례 등록(`/counselor/cases/new`) | `caseApi.ts`의 `createCase` | 사례 생성 API는 있지만 관리자 전용(상담사 허용 여부 결정 필요) |
 
-요약 생성 API는 `{ complaint, intervention, nextPlan, evidence, maskedCount }` 모양으로 돌려주면 화면을 그대로 쓸 수 있습니다 (`src/types/index.ts`의 `SummaryFields`, `EvidenceMap` 참고).
-`src/domain/summarizer.ts`는 가짜 요약기라서 실제 AI로 바꾸면 지워도 됩니다. 챗봇의 위기 감지(`safety.ts`)는 서버에서도 한 번 더 확인하세요.
+`caseGuard.ts`, `accessLog.ts`, `domain/*`는 위 가상 화면 안에서만 쓰이는 흉내 코드입니다. 실제 권한 검사와 접근 로그는 서버가 모든 요청마다 수행합니다. 챗봇의 위기 감지(`safety.ts`)는 서버에서도 한 번 더 확인하세요.
 
 ## 확인이 필요한 값
 
