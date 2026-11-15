@@ -17,8 +17,10 @@
 **요청** `POST http://127.0.0.1:8001/api/ai/summary` (Content-Type: application/json; charset=utf-8)
 
 ```json
-{ "recordText": "상담사가 작성한 상담 기록 텍스트" }
+{ "recordText": "상담사가 작성한 상담 기록 텍스트", "maskTerms": ["내담자 이름"] }
 ```
+
+`maskTerms`는 **선택**이다. 기록에서 지울 이름 등(문자열 목록, 최대 50개, 각 100자 이하, 2글자 이상만 적용)을 알려 주면 AI에 보내기 전에 `[이름]`으로 바꾼다. 백엔드가 내담자 이름을 알고 있으면 꼭 넣는 것을 권한다.
 
 **성공 200**
 
@@ -46,7 +48,7 @@
 | HTTP | error | 뜻 | manualInput | 백엔드 처리 |
 | --- | --- | --- | --- | --- |
 | 400 | EMPTY_RECORD | 기록이 비었거나 공백뿐 (AI를 호출하지 않음) | false | 입력하라고 안내 |
-| 400 | INVALID_REQUEST | 요청 JSON이 틀림 (`recordText` 없음 등) | false | 백엔드 코드 확인 |
+| 400 | INVALID_REQUEST | 요청 JSON이 틀림 (`recordText` 없음, `maskTerms` 형식 오류 등) | false | 백엔드 코드 확인 |
 | 413 | RECORD_TOO_LONG | 기록이 너무 김 (기본 20000자) | false | 나눠서 요청 |
 | 429 | AI_RATE_LIMITED | AI 호출 한도 초과. `retryAfterSeconds`가 있으면 그만큼 기다림 | true | 잠시 뒤 다시 시도 안내 |
 | 502 | AI_UNAVAILABLE | AI 연결 실패 또는 서버 오류 (1회 재시도 후) | true | 재시도 버튼, 수동 입력 |
@@ -82,9 +84,14 @@
 | `AI_HOST` | 선택 | `127.0.0.1` | 서버 주소. 기본은 내 컴퓨터에서만 접속됨 |
 | `AI_PORT` | 선택 | `8001` | 서버 포트 (Spring은 8080) |
 | `AI_MAX_RECORD_CHARS` | 선택 | `20000` | 기록 최대 글자 수 |
-| `AI_PROMPT_FILE` | 선택 | `prompts/summary_prompt_v5.txt` | 다른 프롬프트로 시험할 때 |
+| `AI_SHARED_TOKEN` | 선택(밖에 열 때는 필수) | 없음 | 정하면 `POST /api/ai/summary` 요청에 같은 값의 `X-AI-Token` 헤더가 있어야 한다. 없거나 틀리면 401 `UNAUTHORIZED`이고 Gemini를 부르지 않는다. `/health`는 열려 있다 |
+| `PORT` | 선택 | 없음 | `AI_PORT`가 없을 때 호스팅이 주는 포트를 쓴다(예: Render) |
+| `AI_ENV_FILE` | 선택 | `backend/ai/summary/.env` | 키를 적은 파일 위치를 바꿀 때 |
+| `AI_TIMEOUT_SECONDS` | 선택 | `20` | Gemini 한 번 호출의 제한 시간(초). 넘으면 502 `AI_UNAVAILABLE`로 처리하고 1번 다시 시도한다 |
+| `AI_DEBUG_ERRORS` | 선택(시험용) | 꺼짐 | `1`로 두면 오류 응답에 `detail`(예외 종류와 상태 코드만)을 넣는다. 기록 내용은 넣지 않는다. `live_check.py --extra`가 켠다 |
+| `AI_PROMPT_FILE` | 선택 | `prompts/summary_prompt_v8.txt` | 다른 프롬프트로 시험할 때. 응답의 `promptVersion`은 파일 이름(`summary_prompt_v6.txt` → `v6`)에서 읽는다 |
 
-**키는 환경 변수로만 넣는다.** `.env`에 적어도 되지만 GitHub에는 올리지 않는다(저장소 `.gitignore`가 `.env`를 막고, 이 폴더의 `.gitignore`도 막는다). 올려도 되는 건 값이 빈 `.env.example`뿐이다. 코드, 로그, 문서, 캡처에 키를 남기지 않는다.
+**키는 환경 변수로 넣거나, 이 폴더(`backend/ai/summary/`)의 `.env` 파일에 `GEMINI_API_KEY=키` 한 줄로 적으면 코드가 자동으로 읽는다.** 이미 설정된 환경 변수가 `.env`보다 우선한다. 저장소 맨 위의 `.env`(DB 접속 정보)는 읽지 않는다. `.env`는 GitHub에 올리지 않는다(저장소 `.gitignore`가 `.env`를 막고, 이 폴더의 `.gitignore`도 막는다). 올려도 되는 건 값이 빈 `.env.example`뿐이다. 코드, 로그, 문서, 캡처에 키를 남기지 않는다.
 
 ## 실행 방법
 
@@ -111,7 +118,7 @@ curl -X POST http://127.0.0.1:8001/api/ai/summary -H "Content-Type: application/
 ## Spring Boot 연동 순서
 
 1. 상담사가 요약 생성을 누르면 백엔드가 담당 사례 권한을 확인하고 회기 기록 텍스트를 읽는다.
-2. `POST /api/ai/summary`를 호출한다 (연결 대기 5초, 응답 대기 30초 권장. 실제 응답은 보통 1~3초).
+2. `POST /api/ai/summary`를 호출한다 (연결 대기 5초, 응답 대기 45초 권장. 실제 응답은 보통 1~5초, 긴 기록은 10초 이상, 호출 한도(429)에 걸려 재시도하면 최대 약 30초까지 걸린 적이 있다).
 3. 200이면 초안(DRAFT)으로 저장하고 화면에 "AI 생성 결과, 오류 가능성 있음"과 함께 보여 준다. 오류이면 `manualInput`에 따라 수동 입력 화면을 보여 준다.
 4. 상담사가 수정하고 승인하면 백엔드가 CONFIRMED로 바꾸고 사례 이력에 저장한다.
 
@@ -128,13 +135,54 @@ try {
 }
 ```
 
+## 배포 (AI 서버를 따로 올릴 때)
+
+배포된 백엔드(Render)에서 요약 생성이 되려면 이 AI 서버가 어딘가에 켜져 있어야 한다. 백엔드의 연결 클래스는 기본값 `http://127.0.0.1:8001`을 부르는데, 배포된 컨테이너 안에는 AI 서버가 없어서 그대로 두면 503이 난다.
+
+1. **AI 서버를 별도 서비스로 올린다.** `backend/ai/summary/`에 `Dockerfile`이 있다. 로컬 확인은 `docker build -t ai-summary backend/ai/summary`, Render에서는 Root Directory를 `backend/ai/summary`, 런타임을 Docker로 한다.
+2. **AI 서비스의 환경변수**: `GEMINI_API_KEY`(필수), `AI_SHARED_TOKEN`(길고 추측하기 어려운 값, 필수로 권한다). 포트는 호스팅이 주는 `PORT`를 읽는다.
+3. **백엔드 서비스의 환경변수**: `AI_SUMMARY_URL=https://AI서비스주소/api/ai/summary`, `AI_SUMMARY_TOKEN=위와 같은 토큰`(연결 클래스의 `ai.summary.url`, `ai.summary.token` 설정이다).
+4. **확인**: AI 서비스 주소의 `/health`가 `OK`, 토큰 없이 `POST`하면 401이 와야 한다.
+
+주의:
+- 이 서버는 로그인이 없다. `AI_SHARED_TOKEN` 없이 공개 주소로 올리면 누구나 Gemini 키 한도를 쓰고 기록을 보낼 수 있다. 토큰은 저장소에 올리지 않는다.
+- `Dockerfile`은 만들었지만 Docker로 빌드해 보지는 못했다. 토큰 확인과 `PORT` 읽기는 서버를 직접 실행해 확인했다.
+- 무료 호스팅은 한동안 쓰지 않으면 잠들어 첫 요청이 느릴 수 있다(제 지식 기준이며 확인하지 않았다). 연결 클래스의 기본 대기는 45초이다.
+
+## 개인정보 처리 범위
+
+| 정보 | 처리 |
+| --- | --- |
+| 전화번호, 이메일, 주민등록번호 | 자동으로 `[전화번호]` 등으로 바꾼 뒤 AI에 보낸다 |
+| 이름 | 자동으로 알아내지 못한다. 요청의 `maskTerms`로 알려 준 이름만 `[이름]`으로 바꾼다. **알려 주지 않으면 그대로 AI(외부 API)로 간다** |
+| 서버 로그 | 요청 줄(주소, 상태)만 남기고 기록 내용은 남기지 않는다 |
+| 오류 응답 | 고정된 문구만 쓴다 (AI 라이브러리의 예외 문구를 그대로 내보내지 않는다) |
+
+주소, 병명, 직장 이름 같은 정보는 자동으로 지우지 않는다. 시험에는 가상 데이터만 쓴다.
+
 ## 시험
 
 ```
-py -m unittest discover -s tests -v     # 키 없이 30개 (오류 처리, 서버, 검사 도구)
-py tests/run_eval.py                    # 실제 LLM으로 가상 기록 18개 평가 (키 필요, 약 1분)
+py -m unittest discover -s tests -v     # 키 없이 48개 (오류 처리, 서버, 검사 도구)
+py tests/run_eval.py                    # 실제 LLM으로 가상 기록 27개 평가 (키 필요, 약 2분)
 py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LLM 결과가 아님)
+py tests/run_eval.py --tag v6           # 결과 파일 이름에 _v6을 붙임 (AI_PROMPT_FILE로 다른 프롬프트를 쓸 때)
+py tests/compare_prompts.py             # 프롬프트(v5 v7 v8)를 같은 입력으로 번갈아 3번씩 비교 (실제 Gemini, 10~15분)
+py tests/live_check.py                  # 서버를 직접 띄워 실제 Gemini로 전체 검증 (키 필요, 1~2분)
+py tests/live_check.py --fake           # 키 없이 검증 도구만 점검 (Gemini 검증이 아님)
+py tests/live_check.py --extra          # 네트워크 오류, 시간 초과, 호출 한도(429)를 실제 호출 경로로 확인 (한도에 일부러 닿는다, 1~3분)
 ```
+
+**시험 종류 구분**
+
+| 시험 | 실제 Gemini 호출 | 키 필요 |
+| --- | --- | --- |
+| `unittest` (48개) | 아니오 (가짜 클라이언트) | 아니오 |
+| `run_eval.py` (27개 입력) | 예 | 예 |
+| `live_check.py` | 예 (서버 전체, 이름 가리기, 반복 일관성, 키 오류, 전체 응답 저장) | 예 |
+| `compare_prompts.py` | 예 (프롬프트를 번갈아 호출해 품질과 응답 시간 비교) | 예 |
+| `live_check.py --extra` | 예 (연결 차단으로 만든 네트워크 오류, 연속 호출로 만난 429) | 예 |
+| `--fake` 옵션 | 아니오 (도구 점검용) | 아니오 |
 
 `run_eval.py`는 `eval_output/`에 `eval_results_LLM.csv`(엑셀로 열림)와 `eval_report_LLM.md`를 만든다. 평가 입력은 `tests/eval_cases.json`이다.
 
@@ -146,4 +194,6 @@ py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LL
 - AI는 기록에 없는 상담자 행동("확인함", "안내함")을 가끔 만든다. 프롬프트로 줄였지만 없어지지 않는다. 그래서 상담사 검토와 승인이 필수다.
 - 이전 실측(프롬프트 v3, 기록 10건, 30칸)에서 정답과 일치 23칸이었다. 자세한 문제는 `tests/KNOWN_ISSUES.md`.
 - 프롬프트 v4로 실제 LLM 평가를 두 번 돌렸을 때 15개 중 1차는 통과 12(실패 C03, C09, C12), 2차는 통과 14(실패 C12)였다. **같은 입력이라도 결과가 달라질 수 있다.** C12(짧은 기록)는 두 번 다 호소 칸에 "사정 확인 중"을 넣어서 v5에서 "접수·사정 확인은 호소가 아니라 개입" 규칙과 예시를 추가했다. v5로 18개를 두 번 돌린 결과 **둘 다 통과 17, 실패 1(C09)**이었고, C12와 보완에 쓰지 않은 새 입력 C16~C18은 두 번 다 통과했다. 지어낸 사실은 없었다. 자세한 표는 `tests/results/evaluation_table.xlsx`, 원본 결과는 `tests/results/*.csv`.
-- 응답 시간은 보통 1~3초이지만 첫 호출이나 긴 기록에서 5초 이상(최대 23초)이 나온 적이 있다. 백엔드 응답 대기는 30초 이상을 권한다.
+- 응답 시간은 보통 1~3초이지만 첫 호출이나 긴 기록에서 5초 이상(최대 23초)이 나온 적이 있다. 백엔드 응답 대기는 45초 이상을 권한다. Gemini 호출에는 20초 제한이 있어 최악의 경우(시간 초과 뒤 1번 재시도) 약 41초 안에 끝난다. 한도(429) 뒤 재시도 대기는 최대 25초로 제한해 두었다.
+- Gemini가 가끔 20초 안에 답하지 못한다(`504 DEADLINE_EXCEEDED`, 11/13 측정에서 30번 중 2번). 호출에 20초 제한을 두어 502 `AI_UNAVAILABLE`로 처리하고 1번 다시 시도한다. 연달아 늦으면 사용자는 수동 입력 안내를 본다. 자세한 내용은 `tests/KNOWN_ISSUES.md`.
+- 서버 전체를 실제 Gemini로 검증한 결과(2026-11-10): 통과 20, 실패 0. 같은 기록 5번 반복에서 완전 일치 4/5, 긴 기록(5,707자)은 약 11초, `maskTerms` 없이는 이름이 그대로 AI로 간다. 호출 한도(429)와 네트워크 오류는 11/13에 `live_check.py --extra`로 실제 경로에서 확인했다(연결 차단으로 만든 네트워크 오류는 502 `AI_UNAVAILABLE`, 연달아 호출해 만난 실제 429는 `retryAfterSeconds`를 전달하고 기다린 뒤 회복). 표는 `tests/KNOWN_ISSUES.md`, 원본은 `tests/results/live_check_2026-11-10_v5.*`.

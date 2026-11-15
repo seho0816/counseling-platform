@@ -8,11 +8,25 @@ import os
 import re
 import time
 
-PROMPT_VERSION = "v5"
 FIELDS = ("complaint", "intervention", "nextPlan")
 NO_RECORD = "기록에 없음"
 DEFAULT_MAX_CHARS = 20000
 HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_PROMPT_FILE = "summary_prompt_v8.txt"
+MAX_RETRY_WAIT = 25  # 호출 한도(429) 뒤 기다리는 시간의 상한(초). 백엔드 대기 시간 안에 끝내려고 둔다
+
+
+def prompt_path():
+    return os.environ.get("AI_PROMPT_FILE") or os.path.join(HERE, "prompts", DEFAULT_PROMPT_FILE)
+
+
+def prompt_version():
+    """프롬프트 파일 이름(summary_prompt_v6.txt)에서 버전을 읽는다. 이름 형식이 다르면 'custom'."""
+    m = re.search(r"summary_prompt_(v\d+)", os.path.basename(prompt_path()))
+    return m.group(1) if m else "custom"
+
+
+PROMPT_VERSION = prompt_version()
 
 
 def max_chars():
@@ -29,9 +43,12 @@ class SummaryError(Exception):
         super().__init__(message or self.code)
         self.message = message or self.code
         self.retry_after = retry_after
+        self.detail = None  # 예외 종류와 상태 코드만 (기록 내용은 넣지 않는다)
 
     def to_dict(self):
         d = {"error": self.code, "message": self.message, "manualInput": self.manual_input}
+        if self.detail and os.environ.get("AI_DEBUG_ERRORS") == "1":  # 시험할 때만 켠다
+            d["detail"] = self.detail
         if self.retry_after is not None:
             d["retryAfterSeconds"] = int(round(self.retry_after))
         return d
@@ -83,6 +100,19 @@ def mask_pii(text):
     return text
 
 
+MAX_MASK_TERMS = 50
+
+
+def mask_terms(text, terms):
+    """백엔드가 알려 준 이름 등(terms)을 [이름]으로 바꾼다. 한 글자 용어는 무시한다(너무 많이 바뀌므로).
+    긴 용어부터 바꿔서 '김하늘'과 '하늘'이 함께 있어도 안전하다."""
+    cleaned = sorted({t.strip() for t in (terms or []) if isinstance(t, str) and len(t.strip()) >= 2},
+                     key=len, reverse=True)[:MAX_MASK_TERMS]
+    for term in cleaned:
+        text = text.replace(term, "[이름]")
+    return text
+
+
 # ---- 응답 검증 ----
 def parse_summary(raw):
     """AI 응답 문자열 -> {complaint, intervention, nextPlan}. 이상하면 AiInvalidResponseError."""
@@ -109,7 +139,7 @@ def parse_summary(raw):
 
 
 def load_prompt():
-    path = os.environ.get("AI_PROMPT_FILE") or os.path.join(HERE, "prompts", "summary_prompt_v5.txt")
+    path = prompt_path()
     try:
         with open(path, encoding="utf-8") as f:
             return f.read()
@@ -124,13 +154,13 @@ class SummaryService:
         self.max_retries = max_retries
         self.sleep = sleep
 
-    def summarize(self, record_text):
+    def summarize(self, record_text, terms=None):
         if not isinstance(record_text, str) or not record_text.strip():
             raise EmptyRecordError("상담 기록이 비어 있습니다")
         text = record_text.strip()
         if len(text) > max_chars():
             raise RecordTooLongError("상담 기록이 너무 깁니다 (최대 %d자)" % max_chars())
-        masked = mask_pii(text)
+        masked = mask_pii(mask_terms(text, terms))
         last = None
         for attempt in range(self.max_retries + 1):
             try:
@@ -138,7 +168,7 @@ class SummaryService:
             except AiRateLimitError as e:
                 last = e
                 if attempt < self.max_retries:
-                    self.sleep(min(e.retry_after or 20, 60))
+                    self.sleep(min(e.retry_after or 20, MAX_RETRY_WAIT))
                     continue
                 raise
             except (AiInvalidResponseError, AiUnavailableError) as e:
@@ -150,7 +180,7 @@ class SummaryService:
             except SummaryError:
                 raise  # 키·모델·설정 문제는 다시 해도 소용없다
             except Exception as e:  # 예상 밖 오류는 AI 장애로 취급
-                last = AiUnavailableError(str(e))
+                last = AiUnavailableError("AI 호출 중 알 수 없는 오류가 발생했습니다")  # 예외 문구에 기록이 섞일 수 있어 쓰지 않는다
                 if attempt < self.max_retries:
                     self.sleep(1)
                     continue
