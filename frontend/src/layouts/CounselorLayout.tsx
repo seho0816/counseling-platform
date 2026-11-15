@@ -1,7 +1,6 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import Brand from '../components/Brand';
-import DevTools from '../components/DevTools';
 
 /** 상담사 화면: 왼쪽 메뉴가 있는 업무용 구조. 담당 사례와 기록을 오가며 작업한다. */
 export default function CounselorLayout() {
@@ -25,7 +24,6 @@ export default function CounselorLayout() {
             사례 목록
           </NavLink>
         </nav>
-        {import.meta.env.DEV ? <DevTools /> : null}
         <div className="side__user">
           <div>
             <strong>{user?.name}</strong>

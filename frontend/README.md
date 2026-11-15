@@ -32,23 +32,31 @@ Spring Boot는 `localhost:8080`, React는 `localhost:5173`에서 실행한다.
 
 | 화면·기능 | 데이터 | 비고 |
 | --- | --- | --- |
-| 서버 상태(로그인 화면) | **실제 API** | `GET /api/health` → "서버 상태: 연결됨" |
-| 로그인·로그아웃(상담사, 관리자) | **실제 API** | CSRF → 로그인(form) → CSRF 갱신 → `/api/auth/me` |
-| 로그인 여부 판단 | **실제 API** | 앱을 열 때 `GET /api/auth/me`. 사용자 정보를 브라우저에 저장하지 않음 |
-| 사례 목록(`/counselor/cases`, `/admin/cases`) | **실제 API** | `GET /api/cases?page=&size=`. 관리자는 전체, 상담사는 본인 배정 사례. 관리자 목록은 상담사 이름 표시 |
-| 사례 상세(`/counselor/cases/:id`, `/admin/cases/:id`) | **실제 API** | `GET /api/cases/{id}`. 회기·요약 영역은 "구현 예정" 자리 |
-| 사례 등록(`/admin/cases/new`, 관리자) | **실제 API** | 내담자 등록 `POST /api/admin/clients` → 사례 생성 `POST /api/admin/cases`. 이미 등록한 내담자는 번호로 선택(내담자 목록 API 없음) |
-| 상담사 배정·해제(사례 상세, 관리자) | **실제 API** | `PATCH /api/admin/cases/{id}/assignment` (`counselorId: null`이면 해제) |
-| 상담사 홈(상태 현황) | **실제 API** | 같은 `GET /api/cases` |
-| 계정·권한(`/admin/accounts`) | **실제 API** | 상담사 목록 `GET /api/admin/counselors`, 등록 `POST /api/admin/counselors`. **사용 중지 버튼은 API가 없어 비활성 표시** |
-| 내담자 입장 | 가상 | 백엔드에 내담자 로그인이 없음(가상 입장) |
-| 상담사용 사례 등록(`/counselor/cases/new`), 회기 기록, AI 요약 | 가상(Mock) | 화면 위에 "가상 데이터 화면" 안내가 표시됨. 백엔드는 사례 생성을 관리자만 허용함 |
-| 챗봇, 상담사 찾기 | 가상(Mock) | 같은 안내 표시 |
-| 접근 로그 | 가상(Mock) | 같은 안내 표시 |
+| 서버 상태(로그인 화면) | **실제 API** | `GET /api/health` |
+| 로그인·로그아웃, 로그인 상태 판단 | **실제 API** | CSRF → 로그인(form) → CSRF 갱신 → `/api/auth/me`. 새로고침해도 서버 세션으로 유지 |
+| 비회원 상담 신청 `/apply`(공개) | **실제 API** | `POST /api/intakes`. 로그인 없이 가능하고 개인정보 동의가 필수. 완료 화면에 입력 내용을 다시 보여주지 않음 |
+| 상담 신청 목록·상세·사례 전환(관리자) | **실제 API** | `GET /api/admin/intakes`(상태 필터), `GET …/{id}`, `POST …/{id}/convert` |
+| 사례 목록·상세 | **실제 API** | `GET /api/cases`, `GET /api/cases/{id}` |
+| 사례 상태 변경 | **실제 API** | `PATCH /api/cases/{id}/status`. 허용된 다음 상태만 버튼으로 표시, 종결·연계는 확인 후 변경 |
+| 상담 회기 목록·상세·작성·수정(상담사) | **실제 API** | `GET·POST /api/cases/{id}/sessions`, `GET·PATCH …/{sessionId}`. 회차·상담 날짜 표시 |
+| AI 요약 생성·검토·수정·승인(상담사) | **실제 API** | `POST …/summary/generate`, `GET …/summary`, `PUT …/summary/confirm`. DRAFT(검토 전) / CONFIRMED(승인 완료) 구분, 자동 확정 없음 |
+| 사례 등록·상담사 배정(관리자) | **실제 API** | `POST /api/admin/clients`, `POST /api/admin/cases`, `PATCH …/assignment` |
+| 계정·권한(관리자) | **실제 API** | `GET·POST /api/admin/counselors`. 사용 중지 버튼은 API가 없어 비활성 표시 |
+| 접근 로그(관리자) | **실제 API** | `GET /api/admin/logs`(최신순, 쪽 이동) |
+| 내담자 입장, 챗봇, 상담사 찾기 | 가상(Mock) | 백엔드에 해당 API가 없음. 화면 위에 "가상 데이터 화면" 안내 |
+| 상담사용 사례 등록(`/counselor/cases/new`) | 가상(Mock) | 백엔드가 사례 생성을 관리자에게만 허용함 |
 
-**백엔드에 이미 있는 API(2026-11-03 가이드 기준 12개)는 모두 연결되어 있다.** 남은 가상(Mock) 화면은 백엔드 API가 없는 기능이다.
+**백엔드에 있는 API는 모두 프론트엔드에 연결되어 있다**(인증 4, 사례·상태 4, 회기 4, 요약 3, 접수 4, 관리자 사례·내담자·상담사 5, 접근 로그 1, 서버 상태 1).
+남은 가상(Mock) 화면은 백엔드 API가 없는 기능이다. 가상 데이터 화면에는 `src/components/MockNotice.tsx` 안내가 붙는다(`App.tsx`의 `<Mock>` 래퍼).
 
-가상 데이터 화면에는 `src/components/MockNotice.tsx` 안내가 붙는다(`App.tsx`의 `<Mock>` 래퍼). 화면을 실제 API로 연결하면 그 화면의 `<Mock>` 래퍼를 뺀다.
+### 요약 화면에서 알아 둘 점
+- AI 초안은 **승인 전에는 확정본으로 저장되지 않는다.** 상담사가 3항목(주요 고민·상담 개입 내용·향후 계획)을 확인·수정한 뒤 "승인"해야 한다(승인은 상담사만 가능).
+- 서버에는 요약의 **임시 저장과 직접 작성 API가 없다.** 그래서 AI가 실패하면 "다시 시도"만 가능하다(상담 기록은 이미 저장돼 있다).
+- AI 요약이 만들어진 회기는 서버가 기록 수정을 막는다(409). 화면에서도 "기록 고치기"를 비활성으로 둔다.
+- AI가 서버에 연결되지 않았으면 503, AI 응답이 잘못됐으면 502가 온다. 각각 한국어 안내를 보여준다.
+
+### 오류 메시지
+서버가 오류 본문에 `message`를 담아 주지 않는 설정이면(스프링 기본값) 화면은 상태 코드별 한국어 안내만 보여준다. 본문에 `message`가 있으면 "서버 메시지: …"로 덧붙인다.
 
 로그인은 상담사·관리자 모두 백엔드에 등록된 계정을 쓴다. 비밀번호는 팀에서 따로 전달받는다. 처음 확인할 때는 관리자 계정이 편하다(상담사 계정은 본인에게 배정된 사례만 보인다).
 
@@ -58,12 +66,15 @@ Spring Boot는 `localhost:8080`, React는 `localhost:5173`에서 실행한다.
 | --- | --- |
 | `src/api/http.ts` | 공통 요청. `credentials: 'include'`, CSRF 토큰 보관·갱신, 403이면 토큰을 새로 받아 한 번 재시도, 401이면 로그인 상태 해제, 오류 문구 |
 | `src/api/authApi.ts` | 로그인·로그아웃·`/me`. 백엔드 역할(ADMIN·COUNSELOR)을 화면 역할로 변환 |
-| `src/api/remoteCaseApi.ts` | `fetchCases()`, `fetchCase(id)`와 응답 변환(숫자 ID, 영어 상태, null 필드) |
+| `src/api/remoteCaseApi.ts` | 사례 목록·상세·상태 변경과 응답 변환(숫자 ID, 영어 상태, null 필드) |
+| `src/api/remoteSessionApi.ts` | 상담 회기 목록·상세·작성·수정, 입력 검사, 오류 문구 |
+| `src/api/remoteSummaryApi.ts` | AI 요약 조회·생성·승인, 입력 검사, 오류 문구 |
+| `src/api/remoteIntakeApi.ts` | 상담 신청 제출, 관리자 접수 목록·상세·전환 |
+| `src/api/remoteLogApi.ts` | 접근 로그 조회 |
 | `src/api/remoteAdminApi.ts` | 상담사 목록·등록, 내담자 등록, 사례 생성, 상담사 배정, 입력 검사(백엔드 규칙과 동일) |
 | `src/api/healthApi.ts` | 서버 상태 확인(`/api/health`) |
 | `src/constants/labels.ts` | 상태 변환표(RECEIVED→접수, IN_PROGRESS→진행, CLOSED→종결, REFERRED→연계) |
-| `src/api/caseApi.ts`, `adminApi.ts` 등 기존 파일 | Mock. 아직 쓰는 화면(가상 데이터 화면)이 있어 그대로 둠 |
-| `src/pages/counselor/CaseDetailMockPage.tsx` | 예전 Mock 사례 상세(보존용, 라우트 연결 없음). 회기·상태 변경을 실제 API로 만들 때 참고 |
+| `src/api/caseApi.ts`, `counselorApi.ts`, `caseGuard.ts`, `accessLog.ts`, `src/mocks/*`, `src/domain/*`, `src/chatbot/*` | 아직 가상(Mock)인 화면(챗봇, 상담사 찾기, 상담사용 사례 등록)이 쓰는 파일 |
 
 ### 로그인이 안 될 때
 - `서버에 연결하지 못했어요` → Spring Boot가 켜져 있는지 확인(`http://localhost:8080/api/health`가 OK인지).
@@ -94,20 +105,15 @@ Spring Boot는 `localhost:8080`, React는 `localhost:5173`에서 실행한다.
 
 예약 확정과 상담 방식 선택(X-04, X-05)은 아직 없습니다.
 
-## 첫 연동 확인 순서
+## 전체 흐름 확인 순서
 
-1. Spring Boot와 React를 각각 실행한다(위 "실행" 참고). `http://localhost:8080/api/health`가 `OK`인지 먼저 본다.
-2. 브라우저에서 `http://localhost:5173/login` → "기관 관리자" 탭 → 백엔드에 등록된 관리자 계정으로 로그인한다.
-3. 개발자 도구 Network 탭에서 `csrf` → `login` → `csrf` → `me` 순서로 모두 200인지 확인한다.
-4. 자동으로 `/admin/cases`(전체 사례 목록)가 열린다. Network 탭의 `cases?page=0&size=20`이 200이고, 표에 Supabase의 가상 상담 사례가 보이는지 확인한다.
-5. Supabase에서 사례 제목을 수정하고, 화면의 "다시 불러오기"(또는 새로고침)를 눌러 변경된 제목이 보이는지 확인한다.
-6. 목록에서 이름을 누르면 사례 상세가 열린다(`GET /api/cases/{id}`).
-7. 관리자의 "계정·권한"에서 서버의 상담사 계정이 보이는지 확인하고, 상담사 계정을 하나 등록해 본다(비밀번호 12자 이상).
-8. 사례 목록의 "새 사례 등록"으로 가상 내담자와 사례를 만들고(가상 데이터만 입력), 사례 상세의 "상담사 배정"에서 상담사를 배정·해제해 본다. Supabase에서 같은 데이터가 보이는지 확인한다.
-9. (선택) 배정된 상담사 계정으로 로그인하면 `/counselor`와 `/counselor/cases`에 본인에게 배정된 사례만 보이고, 남의 사례 주소는 열리지 않는다(404 안내).
-
-> 상담사·관리자 로그인이 실제 백엔드 계정으로 바뀌어서, 예전 Mock 계정(`counselor@mindnote.test` 등)으로는 로그인할 수 없다.
-> 사례 상세·회기 기록·AI 요약 같은 Mock 화면은 API가 연결되기 전까지 상담사 로그인으로는 열어도 데이터가 맞지 않는다.
+1. 백엔드와 프론트엔드를 실행하고(위 "실행") 로그인 화면의 "서버 상태"가 "연결됨"인지 본다.
+2. 로그아웃 상태에서 `/apply`로 가서 상담 신청을 제출한다(개인정보 동의 체크, 가상 정보만 입력). 접수 번호가 나오면 성공이다.
+3. 관리자로 로그인 → "상담 신청" → 방금 신청을 열어 "상담 사례로 전환"한다. 사례 화면으로 이동하면 "상담사 배정"에서 상담사를 고른다.
+4. 상담사로 로그인 → 사례 목록에서 해당 사례를 열고 "상담 시작(진행으로 변경)"을 누른다.
+5. "새 상담 기록 작성"으로 회차·날짜·기록을 저장한다.
+6. 저장한 기록의 "AI 요약 만들기"를 누르고(AI가 연결되어 있어야 한다), 초안("검토 전")을 확인·수정해 "승인"한다. "승인 완료"가 되면 끝이다.
+7. 관리자로 다시 로그인 → "접근 로그"에서 위 동작이 기록됐는지 본다.
 
 ## 폴더 구조
 
@@ -127,23 +133,18 @@ src/
   utils/        날짜·가능 시간 계산
 ```
 
-## 백엔드·AI 연동
+## 아직 가상(Mock)인 부분
 
-화면은 `src/api/*` 함수만 부르므로, 함수 안의 Mock만 `fetch`로 바꾸면 화면 코드는 그대로 둘 수 있습니다.
+백엔드 API가 없어서 가상 데이터로 동작하는 화면입니다. API가 생기면 해당 함수 안의 Mock만 `fetch`로 바꾸면 화면 코드는 그대로 둘 수 있습니다.
 
-| 파일 | 함수 | 담당 | 바꿀 내용 |
-| --- | --- | --- | --- |
-| `authApi.ts` | `loginWithPassword`, `enterAsClient` | 백엔드 | 로그인 API |
-| `caseApi.ts` | `listCases`, `getCase`, `createCase`, `changeStatus` | 백엔드 | 사례 API. 상태 전이 규칙은 서버에서도 검사 |
-| `caseApi.ts` | `listSessions`, `createSession`, `updateRecord`, `getIntake` | 백엔드 | 회기·기록·질문지 API |
-| `summaryApi.ts` | `generateSummary` | AI·데이터 | 요약 생성 API. 마스킹 후 LLM 호출 |
-| `summaryApi.ts` | `saveDraft`, `confirmSummary`, `createManualDraft` | 백엔드 | 요약 저장·확정 API |
-| `chatbotApi.ts` | `submitIntake` | 백엔드 | 질문지 저장과 사례 생성, 상담사 배정 |
-| `adminApi.ts` | `listLogs`, `listAccounts`, `setAccountActive`, `createCounselorAccount` | 백엔드 | 관리자 API |
-| `accessLog.ts`, `caseGuard.ts` | 로그 기록, 권한 검사 | 백엔드 | **서버에서 모든 요청마다 수행**. 프론트에서 하면 우회할 수 있음 |
+| 화면 | 쓰는 파일 | 필요한 백엔드 API |
+| --- | --- | --- |
+| 내담자 가상 입장(로그인 화면의 "내담자" 탭) | `authApi.ts`의 `enterAsClient` | (필요 없다고 정함) |
+| 챗봇 대화(`/client/chatbot`) | `chatbot/*`(대화 흐름, 위기 감지 `safety.ts`) | 안내·위기 감지 API. 접수는 마지막에 `/apply`로 이동해 실제 서버에 저장 |
+| 상담사 찾기·일정(`/client/counselors…`) | `counselorApi.ts`, `mocks/*` | 상담사 프로필·분야·가능 시간 API |
+| 상담사용 사례 등록(`/counselor/cases/new`) | `caseApi.ts`의 `createCase` | 사례 생성 API는 있지만 관리자 전용(상담사 허용 여부 결정 필요) |
 
-요약 생성 API는 `{ complaint, intervention, nextPlan, evidence, maskedCount }` 모양으로 돌려주면 화면을 그대로 쓸 수 있습니다 (`src/types/index.ts`의 `SummaryFields`, `EvidenceMap` 참고).
-`src/domain/summarizer.ts`는 가짜 요약기라서 실제 AI로 바꾸면 지워도 됩니다. 챗봇의 위기 감지(`safety.ts`)는 서버에서도 한 번 더 확인하세요.
+`caseGuard.ts`, `accessLog.ts`, `domain/*`는 위 가상 화면 안에서만 쓰이는 흉내 코드입니다. 실제 권한 검사와 접근 로그는 서버가 모든 요청마다 수행합니다. 챗봇의 위기 감지(`safety.ts`)는 서버에서도 한 번 더 확인하세요.
 
 ## 확인이 필요한 값
 
@@ -155,10 +156,8 @@ src/
 
 ## 다음 단계 (백엔드 API가 만들어지면)
 
-1. 회기 생성·조회, AI 요약 생성·저장·확정 → 사례 상세의 "구현 예정" 자리를 연결(요약은 AI 응답 JSON 3항목 구조에 맞춤)
-2. 챗봇 접수(질문지 저장, 위기 표시) → 챗봇 화면 연결
-3. 접근 로그 기록·조회 → 접근 로그 화면 연결
-4. 계정 사용 중지·재사용 → 계정·권한의 비활성 버튼 연결
-5. 내담자 목록 조회 → 사례 등록에서 번호 입력 대신 선택으로 바꾸기
-6. 사례 상태 변경, 상태 조건 조회 → 상태 변경·목록 필터 연결
-연결한 화면은 `App.tsx`의 `<Mock>` 래퍼를 뺀다.
+1. 요약 임시 저장·직접 작성 API → 요약 패널에 "직접 작성" 경로 추가(AI 실패 시 대안)
+2. 계정 사용 중지·재사용 API → 계정·권한의 비활성 버튼 연결
+3. 내담자 목록 API → 사례 등록에서 번호 입력 대신 선택
+4. 위기 표현 감지·위기 표시(접수) → 접수 화면과 사례 목록에 표시
+5. 챗봇 API(안내·접수) → 챗봇 화면 연결 후 `<Mock>` 안내 제거

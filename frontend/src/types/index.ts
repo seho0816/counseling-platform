@@ -214,3 +214,90 @@ export interface ApiClient {
   contact: string | null;
   createdAt: string;
 }
+
+/* ---------------------------------------------------------------------- */
+/* 회기·요약·접수·접근 로그 API 응답 형태                                    */
+/* ---------------------------------------------------------------------- */
+
+/** GET·POST·PATCH /api/cases/{caseId}/sessions 의 한 건 */
+export interface ApiSession {
+  id: number;
+  caseId: number;
+  sessionNumber: number;
+  /** 'YYYY-MM-DD' (날짜만) */
+  sessionDate: string;
+  content: string;
+  authorUserId: number;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+/** 요약 3항목. 값이 없으면 null이다. */
+export interface ApiSummaryFields {
+  complaint: string | null;
+  intervention: string | null;
+  nextPlan: string | null;
+}
+
+export type ApiSummaryStatus = 'DRAFT' | 'CONFIRMED';
+
+/** GET /api/sessions/{sessionId}/summary */
+export interface ApiSummary {
+  id: number;
+  sessionId: number;
+  aiDraft: ApiSummaryFields;
+  finalSummary: ApiSummaryFields | null;
+  status: ApiSummaryStatus;
+  modelName: string | null;
+  confirmedBy: number | null;
+  confirmedAt: string | null;
+}
+
+export type IntakeStatusCode = 'SUBMITTED' | 'PROCESSED';
+
+/** 관리자용 접수 한 건 (GET /api/admin/intakes) */
+export interface ApiIntake {
+  id: number;
+  applicantName: string;
+  applicantContact: string | null;
+  concernCategory: string;
+  concernDescription: string;
+  hasPriorCounseling: boolean | null;
+  status: IntakeStatusCode | string;
+  privacyConsentAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiIntakePage {
+  items: ApiIntake[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+/** POST /api/intakes 의 응답(개인정보는 돌려주지 않는다) */
+export interface ApiIntakeAccepted {
+  id: number;
+  status: IntakeStatusCode | string;
+  createdAt: string;
+}
+
+/** GET /api/admin/logs 의 한 건 */
+export interface ApiAccessLog {
+  id: number;
+  actorUserId: number | null;
+  resourceType: string;
+  resourceId: number | null;
+  action: string;
+  result: 'SUCCESS' | 'DENIED' | string;
+  createdAt: string;
+}
+
+export interface ApiAccessLogPage {
+  items: ApiAccessLog[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}

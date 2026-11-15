@@ -128,3 +128,17 @@ export function describeApiError(error: unknown, fallback = '요청을 처리하
   if (error.status === 404) return '요청한 데이터를 찾을 수 없어요.';
   return `${fallback} (${error.status})`;
 }
+
+/**
+ * 서버가 오류 본문에 담아 준 메시지(있을 때만). 백엔드 설정에 따라 없을 수 있다.
+ * 화면에는 한국어 안내를 먼저 보여주고, 이 값은 참고용 작은 글씨로만 덧붙인다.
+ */
+export function serverDetail(error: unknown): string | null {
+  if (!(error instanceof ApiError)) return null;
+  const body = error.body;
+  if (body && typeof body === 'object' && 'message' in body) {
+    const message = (body as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim() !== '') return message.trim();
+  }
+  return null;
+}
