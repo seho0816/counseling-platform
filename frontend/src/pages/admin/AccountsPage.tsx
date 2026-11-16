@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { createCounselor, fetchCounselors, validateCounselorInput } from '../../api/remoteAdminApi';
+import { createCounselor, fetchCounselors, setCounselorActive, validateCounselorInput } from '../../api/remoteAdminApi';
 import { ApiError, describeApiError } from '../../api/http';
+import ConfirmInline from '../../components/ConfirmInline';
 import PageHead from '../../components/PageHead';
 import StateMessage from '../../components/StateMessage';
 import type { ApiCounselorAccount } from '../../types';
 
 /**
  * 계정·권한 — 상담사 계정 목록(GET)과 등록(POST)을 실제 API로 연결했다.
+ * - 사용 중지·다시 사용은 PATCH /api/admin/counselors/{id}/status 로 바꾸고, 바꾼 뒤 목록을 새로 불러온다.
  * - 관리자 계정은 백엔드 목록 API에 없어서 보이지 않는다.
- * - 사용 중지(비활성화) API가 아직 없어서 버튼은 비활성으로 표시한다.
  */
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<ApiCounselorAccount[] | null>(null);
@@ -16,6 +17,11 @@ export default function AccountsPage() {
   const [message, setMessage] = useState('');
   const [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // 사용 중지·다시 사용
+  const [toggleTarget, setToggleTarget] = useState<ApiCounselorAccount | null>(null);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
+  const [toggleError, setToggleError] = useState('');
 
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -39,6 +45,31 @@ export default function AccountsPage() {
     setAdding(false);
     setPassword(''); // 비밀번호를 화면 상태에 남기지 않는다
     setFormError('');
+  };
+
+  /** 상담사의 사용 상태를 바꾼다. 중지는 확인을 거친 뒤, 다시 사용은 바로 실행한다. */
+  const changeActive = async (account: ApiCounselorAccount, next: boolean) => {
+    setTogglingId(account.id);
+    setToggleError('');
+    setMessage('');
+    try {
+      await setCounselorActive(account.id, next);
+      setToggleTarget(null);
+      await refresh(); // 목록을 먼저 새로 맞춘 뒤 알린다
+      setMessage(next ? `${account.name} 상담사를 다시 사용하도록 바꿨어요.` : `${account.name} 상담사의 사용을 중지했어요.`);
+    } catch (e) {
+      setToggleTarget(null);
+      if (e instanceof ApiError && e.status === 404) {
+        setToggleError('상담사를 찾을 수 없어요. 목록을 새로 불러온 뒤 다시 시도해 주세요.');
+        await refresh();
+      } else if (e instanceof ApiError && e.status === 400) {
+        setToggleError('요청을 서버가 받아들이지 못했어요. 화면을 새로 불러온 뒤 다시 시도해 주세요.');
+      } else {
+        setToggleError(describeApiError(e, '사용 상태를 바꾸지 못했어요.'));
+      }
+    } finally {
+      setTogglingId(null);
+    }
   };
 
   const handleAdd = async (e: FormEvent) => {
@@ -71,7 +102,7 @@ export default function AccountsPage() {
   return (
     <>
       <PageHead title="계정·권한">
-        상담사 계정을 서버(Spring Boot)에서 불러와요. 상담사는 자신에게 배정된 사례만 볼 수 있고, 관리자는 모든 사례를 볼 수 있어요.
+        상담사 계정을 등록하고 사용 여부를 정해요. 상담사는 자신에게 배정된 사례만 볼 수 있고, 관리자는 모든 사례를 볼 수 있어요.
       </PageHead>
 
       {message ? (
@@ -139,6 +170,24 @@ export default function AccountsPage() {
         </div>
       )}
 
+      {toggleTarget ? (
+        <div className="panel stack" role="group" aria-label="사용 중지 확인">
+          <ConfirmInline
+            message={`${toggleTarget.name} 상담사의 사용을 중지할까요? 중지하면 이 상담사는 로그인할 수 없고 새로 배정받을 수 없어요. 이미 배정된 사례는 그대로 남으니, 필요하면 다른 상담사에게 다시 배정해 주세요.`}
+            confirmLabel="사용 중지"
+            busy={togglingId === toggleTarget.id}
+            onConfirm={() => void changeActive(toggleTarget, false)}
+            onCancel={() => setToggleTarget(null)}
+          />
+        </div>
+      ) : null}
+
+      {toggleError ? (
+        <p className="form-error" role="alert">
+          {toggleError}
+        </p>
+      ) : null}
+
       {loadError && !accounts ? (
         <StateMessage
           role="alert"
@@ -180,15 +229,19 @@ export default function AccountsPage() {
                     <span className={`tag ${a.active ? '' : 'tag--alert'}`}>{a.active ? '사용 중' : '사용 중지'}</span>
                   </td>
                   <td>
-                    {/* 사용 중지·재사용 API가 아직 없어서 비활성으로 표시한다 */}
                     <button
                       type="button"
                       className="btn btn--quiet btn--sm"
-                      disabled
-                      title="사용 중지 기능은 서버 API가 만들어지면 연결돼요"
-                      aria-label={`${a.name} ${a.active ? '사용 중지' : '다시 사용'} (아직 사용할 수 없어요)`}
+                      disabled={togglingId !== null || (toggleTarget !== null && toggleTarget.id !== a.id)}
+                      onClick={() => {
+                        setMessage('');
+                        setToggleError('');
+                        if (a.active) setToggleTarget(a);
+                        else void changeActive(a, true);
+                      }}
+                      aria-label={`${a.name} ${a.active ? '사용 중지' : '다시 사용'}`}
                     >
-                      {a.active ? '사용 중지' : '다시 사용'}
+                      {togglingId === a.id ? '바꾸는 중이에요' : a.active ? '사용 중지' : '다시 사용'}
                     </button>
                   </td>
                 </tr>
@@ -199,7 +252,7 @@ export default function AccountsPage() {
       )}
 
       <p className="field__hint">
-        사용 중지·다시 사용 버튼은 서버에 해당 API가 만들어지면 연결해요. 관리자 계정은 이 목록에 나오지 않아요.
+        사용 중지한 상담사는 로그인할 수 없고 새 사례를 배정받을 수 없어요. 관리자 계정은 이 목록에 나오지 않아요.
       </p>
     </>
   );

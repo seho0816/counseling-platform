@@ -48,12 +48,21 @@ export function validateSummaryFields(fields: ApiSummaryFields): string | null {
   return null;
 }
 
-/** 요약 생성 오류를 화면 문구로 바꾼다. */
+/**
+ * 요약 생성 오류를 화면 문구로 바꾼다. 실제 서버가 AI 서비스 결과를 이렇게 구분해서 돌려준다.
+ * 400 기록이 비었거나 AI가 받을 수 없는 내용, 413 기록이 너무 김, 429 호출 한도, 502 AI 응답 오류,
+ * 503 AI 서비스에 연결할 수 없음, 409 이미 요약 있음, 404 회기 없음.
+ */
 export function describeGenerateError(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.status === 503) return 'AI 요약 기능이 아직 서버에 연결되지 않았어요. 백엔드 담당자에게 알려 주세요.';
-    if (error.status === 502) return 'AI가 올바른 요약을 만들지 못했어요. 잠시 뒤에 다시 시도해 주세요.';
+    if (error.timeout) return 'AI 요약이 너무 오래 걸려서 멈췄어요. 잠시 뒤에 다시 시도해 주세요.';
+    if (error.status === 400) return '이 상담 기록으로는 요약을 만들 수 없어요. 기록 내용을 확인해 주세요.';
+    if (error.status === 413) return '상담 기록이 너무 길어서 AI가 요약하지 못해요. 기록을 나누어 쓰거나 줄여 주세요.';
     if (error.status === 429) return 'AI 호출 한도를 넘었어요. 잠시 뒤에 다시 시도해 주세요.';
+    if (error.status === 502) return 'AI가 올바른 요약을 만들지 못했어요. 잠시 뒤에 다시 시도해 주세요.';
+    if (error.status === 503 || error.status === 504) {
+      return 'AI 요약 서비스에 연결하지 못했어요. 한동안 쓰지 않았다면 서비스가 깨어나는 데 1분쯤 걸릴 수 있으니, 잠시 뒤에 다시 시도해 주세요. 계속 안 되면 관리자에게 알려 주세요.';
+    }
     if (error.status === 409) return '이 회기에는 이미 요약이 있어요.';
     if (error.status === 404) return '회기를 찾을 수 없어요. 내게 배정된 사례가 아닐 수 있어요.';
   }

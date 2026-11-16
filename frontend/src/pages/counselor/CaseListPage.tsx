@@ -56,8 +56,8 @@ export default function CaseListPage() {
   const head = (
     <PageHead title={isAdmin ? '전체 사례 목록' : '사례 목록'}>
       {isAdmin
-        ? '관리자는 모든 사례를 볼 수 있어요. 서버(Spring Boot)에 저장된 실제 데이터예요.'
-        : '내게 배정된 사례만 보여요. 서버(Spring Boot)에 저장된 실제 데이터예요.'}
+        ? '관리자는 모든 사례를 볼 수 있어요.'
+        : '내게 배정된 사례만 보여요.'}
     </PageHead>
   );
 
