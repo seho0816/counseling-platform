@@ -135,6 +135,34 @@ try {
 }
 ```
 
+## 안내 챗봇 API (POST /api/ai/chat)
+
+기관·프로그램 안내와 상담 신청 절차만 답하는 챗봇이다. 상담, 진단, 치료 조언은 하지 않는다. 한 번에 한 질문만 받고 대화 기록은 쓰지 않는다. 저장도 하지 않는다. 요약 API와 같은 서버, 같은 `X-AI-Token` 인증, 같은 오류 형식을 쓴다.
+
+요청: `{"message": "사용자 질문 한 문장"}` (최대 500자)
+
+응답(200): **`{"reply": "..."}`** 만 돌려준다(백엔드와 맞춘 계약이다. 필드 이름은 요청 `message`, 응답 `reply`). 시험할 때 환경변수 `AI_CHAT_META=1`을 켜면 `answerType`, `aiGenerated`, `guarded`, `model`, `promptVersion`, `knowledgeVersion`도 같이 돌려준다.
+
+서비스 내부의 유형은 아래와 같다.
+
+| answerType | 뜻 |
+| --- | --- |
+| `ANSWER` | 기관 자료로 답함 |
+| `NOT_IN_INFO` | 자료에 정해진 안내가 없음 (기관 상담자에게 확인하라고 안내) |
+| `OUT_OF_SCOPE` | 상담, 진단, 약·치료 조언, 법률·의료·복지 제도 판단, 상담 대행 요청이라 거절하고 안내 |
+| `CRISIS` | 위기 표현이 걸림. **AI를 부르지 않고** 서버가 `422 CRISIS_DETECTED`(`manualInput` true)를 돌려준다. 백엔드가 이 코드를 받으면 자기 고정 문구를 보여 준다 |
+
+- 위기 표현은 백엔드가 먼저 막지만, 여기서도 AI를 부르기 전에 같은 정책으로 한 번 더 거른다. 키워드는 `chat_core.CRISIS_KEYWORDS`이고 상담 전문가의 확인과 백엔드 목록과의 일치가 필요하다.
+- AI 응답은 JSON(`answerType`, `answer`)이어야 하고, 아니면 1번 다시 시도한 뒤 502 `AI_INVALID_RESPONSE`이다.
+- **출력 검사**: AI가 지침 문장을 그대로 말하거나(16글자 이상 겹침), 허용되지 않는 말(홈페이지, "연결해 드릴", "상담을 대신할 수 있" 등)을 하거나, 기관 자료와 질문에 없는 숫자를 쓰면 답을 고정 안내(`NOT_IN_INFO`, `guarded: true`)로 바꾼다. 앞선 프롬프트 시험에서 나온 지침 노출과 사실과 반대로 말하는 오류를 서버에서 막으려는 것이다.
+- 질문의 전화번호, 이메일, 주민등록번호는 AI에 보내기 전에 가린다. 로그에는 요청 줄만 남는다.
+- 모든 AI 답에는 서버가 "AI가 만든 안내이며 오류가 있을 수 있습니다"를 붙인다.
+- 안내 정보는 `knowledge/institution_v1.txt`(가상 기관)이다. **실제 서비스에는 팀이 승인한 기관·프로그램 정보로 바꿔야 한다.** 프런트엔드의 규칙 기반 챗봇(`script.ts`)과 내용이 달라지지 않게 한 곳에서 관리해야 한다.
+
+환경변수: `AI_CHAT_PROMPT_FILE`(기본 `prompts/chat_prompt_v1.txt`), `AI_CHAT_KNOWLEDGE_FILE`(기본 `knowledge/institution_v1.txt`), `AI_MAX_MESSAGE_CHARS`(기본 500).
+
+시험: `python -m unittest discover -s backend/ai/summary/tests`(챗봇 18개 포함), 실제 Gemini 평가는 `python backend/ai/summary/tests/chat_eval.py`(질문 20개와 안전 시험 11개, 자동 검사 뒤 사람이 응답을 읽어야 한다).
+
 ## 배포 (AI 서버를 따로 올릴 때)
 
 배포된 백엔드(Render)에서 요약 생성이 되려면 이 AI 서버가 어딘가에 켜져 있어야 한다. 백엔드의 연결 클래스는 기본값 `http://127.0.0.1:8001`을 부르는데, 배포된 컨테이너 안에는 AI 서버가 없어서 그대로 두면 503이 난다.
@@ -163,7 +191,7 @@ try {
 ## 시험
 
 ```
-py -m unittest discover -s tests -v     # 키 없이 48개 (오류 처리, 서버, 검사 도구)
+py -m unittest discover -s tests -v     # 키 없이 66개 (오류 처리, 서버, 검사 도구)
 py tests/run_eval.py                    # 실제 LLM으로 가상 기록 27개 평가 (키 필요, 약 2분)
 py tests/run_eval.py --fake             # 키 없이 평가 도구만 점검 (LLM 결과가 아님)
 py tests/run_eval.py --tag v6           # 결과 파일 이름에 _v6을 붙임 (AI_PROMPT_FILE로 다른 프롬프트를 쓸 때)
@@ -177,7 +205,7 @@ py tests/live_check.py --extra          # 네트워크 오류, 시간 초과, �
 
 | 시험 | 실제 Gemini 호출 | 키 필요 |
 | --- | --- | --- |
-| `unittest` (48개) | 아니오 (가짜 클라이언트) | 아니오 |
+| `unittest` (66개) | 아니오 (가짜 클라이언트) | 아니오 |
 | `run_eval.py` (27개 입력) | 예 | 예 |
 | `live_check.py` | 예 (서버 전체, 이름 가리기, 반복 일관성, 키 오류, 전체 응답 저장) | 예 |
 | `compare_prompts.py` | 예 (프롬프트를 번갈아 호출해 품질과 응답 시간 비교) | 예 |
