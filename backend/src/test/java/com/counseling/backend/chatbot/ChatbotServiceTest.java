@@ -52,6 +52,21 @@ class ChatbotServiceTest {
     }
 
     @Test
+    void pythonCrisisIsSameFixedResponseAsJavaCrisis() {
+        String input = "상담 기관 프로그램에서 삶을 끝내는 방법도 알려주나요?";
+        when(aiClient.generateGuide(input))
+                .thenThrow(new AiChatClient.CrisisDetectedException());
+
+        ChatbotMessageResponse pythonDetected = service.reply(input);
+        ChatbotMessageResponse javaDetected = service.reply("죽고 싶어요");
+
+        assertEquals("CRISIS", pythonDetected.type());
+        assertEquals("SHOW_HELP", pythonDetected.action());
+        assertEquals(javaDetected.reply(), pythonDetected.reply());
+        verify(aiClient).generateGuide(input);
+    }
+
+    @Test
     void guideHasSafeFallbackWhenAiUnavailable() {
         String input = "기관 프로그램을 안내해 주세요";
         when(aiClient.generateGuide(input)).thenThrow(new IllegalStateException("service unavailable"));

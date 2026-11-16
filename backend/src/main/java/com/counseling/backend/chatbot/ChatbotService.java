@@ -18,6 +18,11 @@ public class ChatbotService {
     private static final Pattern GUIDE = Pattern.compile(
             "기관|프로그램|이용|절차|안내|운영|상담|지원|서비스");
 
+    private static final String CRISIS_REPLY =
+            "현재 자신이나 다른 사람의 안전이 위협받는다면 즉시 119 또는 112에 연락해 주세요. "
+            + "자살예방상담전화 109에서도 도움을 받을 수 있습니다. "
+            + "이 챗봇은 전문 상담을 대신하지 않습니다.";
+
     private final AiChatClient aiChatClient;
 
     public ChatbotService(AiChatClient aiChatClient) {
@@ -31,11 +36,7 @@ public class ChatbotService {
         }
         if (CRISIS.matcher(input).find()) {
             // Never call Gemini in a recognized crisis branch.
-            return new ChatbotMessageResponse(
-                    "현재 자신이나 다른 사람의 안전이 위협받는다면 즉시 119 또는 112에 연락해 주세요. "
-                    + "자살예방상담전화 109에서도 도움을 받을 수 있습니다. "
-                    + "이 챗봇은 전문 상담을 대신하지 않습니다.",
-                    "CRISIS", "SHOW_HELP");
+            return crisisResponse();
         }
         if (COUNSELING_REQUEST.matcher(input).find()) {
             return new ChatbotMessageResponse(
@@ -53,6 +54,10 @@ public class ChatbotService {
             try {
                 return new ChatbotMessageResponse(
                         aiChatClient.generateGuide(input), "GUIDE", null);
+            } catch (AiChatClient.CrisisDetectedException e) {
+                // Python's second-line safety gate found a crisis. Use exactly
+                // the same Java-owned fixed message, not AI-generated text.
+                return crisisResponse();
             } catch (RuntimeException e) {
                 // Never expose upstream errors, credentials or private messages to the browser.
                 return new ChatbotMessageResponse(
@@ -65,5 +70,9 @@ public class ChatbotService {
                 "이 챗봇은 기관·프로그램 안내와 상담 신청을 도와드립니다. "
                 + "상담 신청 절차나 기관 프로그램에 관해 질문해 주세요.",
                 "FALLBACK", "SHOW_MENU");
+    }
+
+    private static ChatbotMessageResponse crisisResponse() {
+        return new ChatbotMessageResponse(CRISIS_REPLY, "CRISIS", "SHOW_HELP");
     }
 }
