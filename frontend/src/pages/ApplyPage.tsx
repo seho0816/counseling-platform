@@ -13,26 +13,23 @@ type Prior = 'yes' | 'no' | 'unknown';
 interface ChatbotHandoff {
   fromChatbot?: boolean;
   field?: string;
-  ageGroup?: string;
-  method?: string;
-  time?: string;
   concern?: string;
+  /** 챗봇 선택지 그대로: 있음 / 없음 / 답하지 않음 */
+  prior?: string;
   crisis?: boolean;
 }
 
-/** 챗봇의 분야 선택을 신청서의 분야 목록에 맞춘다. 목록에 없으면(‘잘 모르겠어요’ 등) ‘기타’로 둔다. */
+/** 챗봇의 분야 선택을 신청서의 분야 목록에 맞춘다. 목록에 없으면 ‘기타’로 둔다. */
 function toCategory(field: string | undefined): string {
   if (!field) return '';
-  return (COUNSELING_FIELDS as readonly string[]).includes(field) ? field : '기타';
+  return field === '기타' || (COUNSELING_FIELDS as readonly string[]).includes(field) ? field : '기타';
 }
 
-/** 서버에 저장 칸이 없는 챗봇 답변(연령대·상담 방식·편한 시간대)을 한 줄로 만든다. */
-function extrasLine(h: ChatbotHandoff): string {
-  const parts: string[] = [];
-  if (h.ageGroup) parts.push(`연령대 ${h.ageGroup}`);
-  if (h.method) parts.push(`상담 방식 ${h.method}`);
-  if (h.time) parts.push(`편한 시간대 ${h.time}`);
-  return parts.length ? `(희망: ${parts.join(', ')})` : '';
+/** 챗봇의 이전 상담 경험 선택을 신청서 선택지로 바꾼다. */
+function toPrior(prior: string | undefined): Prior {
+  if (prior === '있음') return 'yes';
+  if (prior === '없음') return 'no';
+  return 'unknown';
 }
 
 /**
@@ -43,13 +40,12 @@ function extrasLine(h: ChatbotHandoff): string {
 export default function ApplyPage() {
   const handoff = ((useLocation().state as ChatbotHandoff | null) ?? {}) as ChatbotHandoff;
   const fromChatbot = handoff.fromChatbot === true;
-  const extras = fromChatbot ? extrasLine(handoff) : '';
 
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
   const [category, setCategory] = useState(() => (fromChatbot ? toCategory(handoff.field) : ''));
   const [concern, setConcern] = useState(() => (fromChatbot ? (handoff.concern ?? '').trim() : ''));
-  const [prior, setPrior] = useState<Prior>('unknown');
+  const [prior, setPrior] = useState<Prior>(() => (fromChatbot ? toPrior(handoff.prior) : 'unknown'));
   const [consent, setConsent] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -148,19 +144,6 @@ export default function ApplyPage() {
                 <p>
                   <strong>챗봇에서 입력한 내용을 가져왔어요.</strong> 이름(별칭)과 개인정보 동의를 확인하고 제출하면 상담 신청이 완료돼요.
                 </p>
-                {extras ? (
-                  <p className="field__hint" style={{ marginTop: 6 }}>
-                    챗봇에서 고른 내용({extras.slice(5, -1)})은 신청서에 따로 저장되지 않아요. 상담사에게 꼭 전하고 싶다면 고민 내용에 함께 적어 주세요.{' '}
-                    <button
-                      type="button"
-                      className="btn btn--quiet btn--sm"
-                      onClick={() => setConcern((prev) => (prev.includes(extras) ? prev : `${prev.trim()}${prev.trim() ? '\n' : ''}${extras}`))}
-                      disabled={concern.includes(extras)}
-                    >
-                      고민 내용에 함께 적기
-                    </button>
-                  </p>
-                ) : null}
               </div>
             ) : null}
 

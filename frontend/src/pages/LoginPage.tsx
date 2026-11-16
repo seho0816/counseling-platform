@@ -30,12 +30,26 @@ export default function LoginPage() {
   const [alias, setAlias] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [server, setServer] = useState<'checking' | 'ok' | 'down'>('checking');
+  const [server, setServer] = useState<'checking' | 'waking' | 'ok' | 'down'>('checking');
 
-  // GET /api/health 로 서버가 켜져 있는지 확인한다.
+  // GET /api/health 로 서버가 켜져 있는지 확인한다. 배포 서버가 잠들어 있으면 깨어날 때까지 5초 간격으로 다시 확인한다(최대 약 1분).
   useEffect(() => {
     let cancelled = false;
-    checkServer().then((result) => !cancelled && setServer(result));
+    (async () => {
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const result = await checkServer();
+        if (cancelled) return;
+        if (result === 'ok') {
+          setServer('ok');
+          return;
+        }
+        if (attempt === 5) break;
+        setServer('waking');
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        if (cancelled) return;
+      }
+      setServer('down');
+    })();
     return () => {
       cancelled = true;
     };
@@ -214,9 +228,11 @@ export default function LoginPage() {
             서버 상태:{' '}
             {server === 'checking'
               ? '확인하는 중이에요'
-              : server === 'ok'
-                ? '연결됨'
-                : '연결되지 않았어요. Spring Boot가 켜져 있는지(localhost:8080) 확인해 주세요.'}
+              : server === 'waking'
+                ? '서버가 깨어나는 중일 수 있어요. 잠시만 기다려 주세요(최대 1분).'
+                : server === 'ok'
+                  ? '연결됨'
+                  : `연결되지 않았어요. 잠시 뒤 새로고침해 주세요.${import.meta.env.DEV ? ' 개발 중이라면 Spring Boot(localhost:8080)가 켜져 있는지 확인해 주세요.' : ''}`}
           </p>
         </div>
       </section>

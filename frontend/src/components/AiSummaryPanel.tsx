@@ -49,6 +49,7 @@ export default function AiSummaryPanel({ sessionId, canGenerate, onExistsChange,
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [slow, setSlow] = useState(false); // AI 호출이 오래 걸릴 때 안내를 덧붙인다
   const [generateError, setGenerateError] = useState('');
   const [form, setForm] = useState<Record<Key, string>>(toForm(null));
   const [asking, setAsking] = useState(false);
@@ -79,6 +80,16 @@ export default function AiSummaryPanel({ sessionId, canGenerate, onExistsChange,
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 요약 생성이 8초를 넘기면 ‘오래 걸릴 수 있어요’ 안내를 보여준다(서버·AI가 깨어나는 중일 수 있다).
+  useEffect(() => {
+    if (!generating) {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), 8000);
+    return () => clearTimeout(timer);
+  }, [generating]);
 
   const generate = async () => {
     setGenerating(true);
@@ -144,6 +155,9 @@ export default function AiSummaryPanel({ sessionId, canGenerate, onExistsChange,
         {generating ? (
           <div className="state" role="status" aria-busy="true">
             <p>AI가 요약 초안을 만드는 중이에요. 잠시만 기다려 주세요.</p>
+            {slow ? (
+              <p className="field__hint">생각보다 오래 걸리고 있어요. 한동안 쓰지 않았다면 서버가 깨어나는 데 1분쯤 걸릴 수 있어요. 화면을 닫지 말고 기다려 주세요.</p>
+            ) : null}
           </div>
         ) : (
           <>
@@ -193,7 +207,7 @@ export default function AiSummaryPanel({ sessionId, canGenerate, onExistsChange,
             {ITEMS.map((item) => (
               <div key={item.key} className="ai-summary__item">
                 <dt>{item.label}</dt>
-                <dd>{summary.aiDraft[item.key] ?? <span className="muted">(비어 있음)</span>}</dd>
+                <dd>{summary.aiDraft[item.key] ?? <span className="muted">(기록에 없는 항목)</span>}</dd>
               </div>
             ))}
           </dl>
@@ -224,9 +238,12 @@ export default function AiSummaryPanel({ sessionId, canGenerate, onExistsChange,
             value={form[item.key]}
             maxLength={SUMMARY_FIELD_MAX}
             onChange={(e) => setForm((prev) => ({ ...prev, [item.key]: e.target.value }))}
+            placeholder={summary.aiDraft[item.key] === null ? '기록에 없는 항목이에요. 필요하면 직접 적어 주세요.' : undefined}
             disabled={!canConfirm || confirming}
           />
-          <span className="field__hint">{item.hint}</span>
+          <span className="field__hint">
+            {summary.aiDraft[item.key] === null ? `${item.hint} · AI가 기록에서 찾지 못한 항목이에요.` : item.hint}
+          </span>
         </div>
       ))}
 

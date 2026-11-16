@@ -25,9 +25,6 @@ export default function ClientLayout() {
             <NavLink to="/client/chatbot" className="topbar__link">
               챗봇 안내
             </NavLink>
-            <NavLink to="/client/counselors" className="topbar__link">
-              상담사 찾기
-            </NavLink>
           </nav>
           <div className="topbar__user">
             <span>{user?.name} 님</span>
