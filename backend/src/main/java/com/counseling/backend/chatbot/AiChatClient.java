@@ -10,6 +10,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestClient;
+import tools.jackson.databind.json.JsonMapper;
 
 /** Calls the Python AI guide endpoint. Never logs a user message or authentication token. */
 @Component
@@ -17,6 +18,7 @@ public class AiChatClient {
     private final RestClient restClient;
     private final URI endpoint;
     private final String token;
+    private static final JsonMapper JSON = JsonMapper.builder().build();
 
     public AiChatClient(
             @Value("${ai.chat.url:}") String url,
@@ -44,8 +46,15 @@ public class AiChatClient {
         }
         AiReply response;
         try {
-            response = request.body(new AiRequest(message))
-                    .retrieve().body(AiReply.class);
+            byte[] jsonBytes = JSON.writeValueAsBytes(
+                Map.of("message", message)
+            );
+
+            response = request
+                .contentLength(jsonBytes.length)
+                .body(jsonBytes)
+                .retrieve()
+                .body(AiReply.class);
         } catch (RestClientResponseException e) {
             // Python returns 422 {"error":"CRISIS_DETECTED", ...} when its
             // secondary safety check catches a crisis that Java did not catch.
