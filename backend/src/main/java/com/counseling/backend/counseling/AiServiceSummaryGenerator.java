@@ -16,6 +16,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Connects the backend to the AI summary service (backend/ai/summary/server.py).
@@ -35,6 +37,9 @@ public class AiServiceSummaryGenerator implements SummaryGenerator {
     static final String NO_RECORD = "기록에 없음";
     static final int MAX_TERMS = 50;        // the AI service accepts at most 50 terms
     static final int MAX_TERM_LENGTH = 100; // and at most 100 characters per term
+
+    private static final Logger log =
+        LoggerFactory.getLogger(AiServiceSummaryGenerator.class);
 
     private final HttpClient client;
     private final URI uri;
@@ -88,6 +93,25 @@ public class AiServiceSummaryGenerator implements SummaryGenerator {
 
         int status = response.statusCode();
         Map<String, Object> body = parseOrNull(response.body());
+
+        if (status != 200) {
+            log.warn(
+                "[AI_SUMMARY] Python AI returned HTTP={}, validJson={}",
+                status,
+                body != null
+            );
+        } else if (
+                body == null
+                || !(body.get("complaint") instanceof String)
+                || !(body.get("intervention") instanceof String)
+                || !(body.get("nextPlan") instanceof String)
+                || !(body.get("model") instanceof String)
+        ) {
+            log.warn(
+                "[AI_SUMMARY] Python AI returned HTTP 200, but response structure is invalid"
+            );
+        }
+
         if (status == 200) {
             return toSummary(body);
         }

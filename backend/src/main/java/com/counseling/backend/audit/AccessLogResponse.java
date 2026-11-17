@@ -1,10 +1,13 @@
+
 package com.counseling.backend.audit;
 
+import com.counseling.backend.user.User;
 import java.time.OffsetDateTime;
 
 public record AccessLogResponse(
         Long id,
         Long actorUserId,
+        String actorName,
         String resourceType,
         Long resourceId,
         String action,
@@ -12,9 +15,17 @@ public record AccessLogResponse(
         OffsetDateTime createdAt
 ) {
     public static AccessLogResponse from(AccessLog log) {
-        return new AccessLogResponse(log.getId(),
-                log.getActor() == null ? null : log.getActor().getId(),
-                log.getResourceType(), log.getResourceId(), log.getAction(),
-                log.getResult(), log.getCreatedAt());
+        User actor = log.getActor();
+
+        return new AccessLogResponse(
+                log.getId(),
+                actor == null ? null : actor.getId(),
+                actor == null ? null : actor.getName(),
+                log.getResourceType(),
+                log.getResourceId(),
+                log.getAction(),
+                log.getResult(),
+                log.getCreatedAt()
+        );
     }
 }
