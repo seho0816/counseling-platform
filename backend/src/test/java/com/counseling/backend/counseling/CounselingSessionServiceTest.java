@@ -48,6 +48,7 @@ class CounselingSessionServiceTest {
         ReflectionTestUtils.setField(client, "id", 100L);
         CounselingCase result = new CounselingCase(client, owner, "가상 상담 사례");
         ReflectionTestUtils.setField(result, "id", id);
+        result.changeStatus(CaseStatus.IN_PROGRESS);
         return result;
     }
 

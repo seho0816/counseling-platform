@@ -41,6 +41,7 @@ class CounselingSummaryServiceMaskingTest {
 
         Client client = new Client("김하늘", null);
         CounselingCase counselingCase = new CounselingCase(client, null, "진로 상담");
+        counselingCase.changeStatus(CaseStatus.IN_PROGRESS);
         CounselingSession session = new CounselingSession(counselingCase, 1, LocalDate.of(2026, 11, 6),
             "김하늘 내담자는 진로 불안을 표현함. 하늘 님은 직무를 조사하기로 함.", admin);
         ReflectionTestUtils.setField(session, "id", 800L);

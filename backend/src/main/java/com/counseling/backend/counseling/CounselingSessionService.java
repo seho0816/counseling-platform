@@ -55,6 +55,7 @@ public class CounselingSessionService {
         User actor = actors.requireAny(authentication, UserRole.ADMIN, UserRole.COUNSELOR);
         validateCreate(request);
         CounselingCase counselingCase = findAuthorizedCase(caseId, actor);
+        CaseWorkflowGuard.requireInProgress(counselingCase);
         if (sessions.existsByCounselingCase_IdAndSessionNumber(caseId, request.sessionNumber())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Session number already exists for this case");
         }
@@ -73,7 +74,8 @@ public class CounselingSessionService {
     @PreAuthorize("hasAnyRole('ADMIN', 'COUNSELOR')")
     public SessionResponse update(Long caseId, Long sessionId,
                                   UpdateSessionRequest request, Authentication authentication) {
-        authorizedCase(caseId, authentication);
+        CounselingCase counselingCase = authorizedCase(caseId, authentication);
+        CaseWorkflowGuard.requireInProgress(counselingCase);
         validateUpdate(request);
         CounselingSession session = requireSession(caseId, sessionId);
         // Once an AI draft exists, updating its source record can invalidate that draft.

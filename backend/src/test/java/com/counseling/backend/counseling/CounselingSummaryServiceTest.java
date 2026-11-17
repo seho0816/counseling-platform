@@ -47,6 +47,7 @@ class CounselingSummaryServiceTest {
     private CounselingSession session(User assignedCounselor, User author) {
         Client client = new Client("가상 내담자", null);
         CounselingCase counselingCase = new CounselingCase(client, assignedCounselor, "진로 상담");
+        counselingCase.changeStatus(CaseStatus.IN_PROGRESS);
         CounselingSession session = new CounselingSession(counselingCase, 1,
             LocalDate.of(2026, 11, 6), "내담자가 진로 불안을 표현함. 상담사는 관심 직무를 조사하도록 안내함.", author);
         ReflectionTestUtils.setField(session, "id", 700L);

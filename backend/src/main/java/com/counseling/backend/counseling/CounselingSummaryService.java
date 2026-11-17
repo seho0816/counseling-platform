@@ -47,6 +47,7 @@ public class CounselingSummaryService {
     public SummaryResponse generate(Long sessionId, Authentication authentication) {
         User actor = actors.requireAny(authentication, UserRole.ADMIN, UserRole.COUNSELOR);
         CounselingSession session = authorizedSession(sessionId, actor);
+        CaseWorkflowGuard.requireInProgress(session.getCounselingCase());
         if (summaries.existsBySession_Id(sessionId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A draft already exists for this session");
         }
@@ -85,7 +86,8 @@ public class CounselingSummaryService {
     public SummaryResponse confirm(Long sessionId, ConfirmSummaryRequest request,
                                    Authentication authentication) {
         User reviewer = actors.require(authentication, UserRole.COUNSELOR);
-        authorizedSession(sessionId, reviewer);
+        CounselingSession session = authorizedSession(sessionId, reviewer);
+        CaseWorkflowGuard.requireInProgress(session.getCounselingCase());
         if (request == null || request.finalSummary() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "finalSummary is required");
         }
